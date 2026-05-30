@@ -49,11 +49,14 @@ new class extends Component
         $this->driver_id = $log->driver_id;
         $this->zone_id = $log->zone_id;
         $this->task_category_id = $log->task_category_id;
+
         $this->working_duration = $log->working_duration;
         $this->working_area = $log->working_area;
+
         $this->diesel_start = $log->diesel_start;
         $this->diesel_refill = $log->diesel_refill;
         $this->diesel_end = $log->diesel_end;
+
         $this->note = $log->note;
 
         $this->calculate();
@@ -69,6 +72,7 @@ new class extends Component
         $dieselStart = (float) $this->diesel_start;
         $dieselRefill = (float) $this->diesel_refill;
         $dieselEnd = (float) $this->diesel_end;
+
         $workingArea = (float) $this->working_area;
         $workingDuration = (float) $this->working_duration;
 
@@ -94,6 +98,10 @@ new class extends Component
 
     public function update()
     {
+        if (!auth()->user()->hasPermission('work_logs.edit')) {
+            abort(403, 'Permission denied.');
+        }
+
         $this->calculate();
 
         $this->validate([
@@ -142,17 +150,22 @@ new class extends Component
                 'driver_id' => $this->driver_id,
                 'zone_id' => $this->zone_id,
                 'task_category_id' => $this->task_category_id,
+
                 'working_duration' => $this->working_duration,
                 'working_area' => $this->working_area,
+
                 'diesel_start' => $this->diesel_start,
                 'diesel_refill' => $this->diesel_refill,
                 'diesel_end' => $this->diesel_end,
                 'diesel_consumed' => $this->diesel_consumed,
+
                 'diesel_per_hectare' => $this->diesel_per_hectare,
                 'hectare_per_hour' => $this->hectare_per_hour,
+
                 'request_fuel_per_hectare' => $this->request_fuel_per_hectare,
                 'request_fuel' => $this->request_fuel,
                 'variance_fuel' => $this->variance_fuel,
+
                 'note' => $this->note,
                 'updated_by' => Auth::id(),
             ]);
@@ -208,11 +221,120 @@ new class extends Component
 
 <div class="page">
     @include('components.shared-style')
+    @include('components.toast-alert')
+
+    <style>
+        .excel-toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .excel-note {
+            background: #ecfdf5;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-weight: 800;
+        }
+
+        .excel-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+        }
+
+        .excel-table {
+            min-width: 1780px;
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+        }
+
+        .excel-table th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #f8fafc;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        .excel-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: middle;
+        }
+
+        .excel-table input,
+        .excel-table select {
+            width: 100%;
+            min-width: 120px;
+            height: 44px;
+            padding: 9px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 13px;
+            background: #fff;
+        }
+
+        .excel-note-input {
+            min-width: 180px !important;
+        }
+
+        .excel-number {
+            font-weight: 900;
+            color: #0f172a;
+            white-space: nowrap;
+        }
+
+        .excel-danger {
+            color: #dc2626;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .excel-success {
+            color: #166534;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .row-no {
+            width: 45px;
+            min-width: 45px;
+            text-align: center;
+            font-weight: 900;
+            color: #64748b;
+        }
+
+        .excel-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        @media (max-width: 900px) {
+            .excel-summary {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
 
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.edit_farm_work_log') }}</h1>
-            <p class="page-subtitle">{{ __('pages.edit_farm_work_log_subtitle') }}</p>
+            {{-- <p class="page-subtitle">{{ __('pages.edit_work_log_excel_subtitle') }}</p> --}}
         </div>
 
         <div class="page-actions">
@@ -235,129 +357,177 @@ new class extends Component
     </div>
 
     <div class="panel">
-        <h2 class="panel-title">{{ __('pages.work_information') }}</h2>
+        {{-- <div class="excel-toolbar">
+            <div class="excel-note">
+                {{ __('pages.edit_work_log_excel_help') }}
+            </div>
+        </div> --}}
 
-        <div class="form-grid">
-            <div>
-                <label>{{ __('pages.work_date') }} *</label>
-                <input type="date" wire:model.live="work_date">
-                @error('work_date') <small>{{ $message }}</small> @enderror
+        @error('diesel_consumed')
+            <div class="alert" style="background:#fee2e2;color:#991b1b;border-color:#fecaca;">
+                {{ $message }}
+            </div>
+        @enderror
+
+        <div class="excel-table-wrap">
+            <table class="excel-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{{ __('pages.date') }}</th>
+                        <th>{{ __('pages.tractor') }}</th>
+                        <th>{{ __('pages.driver') }}</th>
+                        <th>{{ __('pages.zone') }}</th>
+                        <th>{{ __('pages.task') }}</th>
+                        <th>{{ __('pages.hour') }}</th>
+                        <th>{{ __('pages.area') }}</th>
+                        <th>{{ __('pages.diesel_start') }}</th>
+                        <th>{{ __('pages.diesel_refill') }}</th>
+                        <th>{{ __('pages.diesel_end') }}</th>
+                        <th>{{ __('pages.diesel_used') }}</th>
+                        <th>{{ __('pages.lha') }}</th>
+                        <th>{{ __('pages.hahr') }}</th>
+                        <th>{{ __('pages.variance') }}</th>
+                        <th>{{ __('pages.note') }}</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr>
+                        <td class="row-no">1</td>
+
+                        <td>
+                            <input type="date" wire:model.live="work_date">
+                            @error('work_date') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <select wire:model.live="tractor_id">
+                                <option value="">{{ __('pages.select_tractor') }}</option>
+                                @foreach($tractors as $tractor)
+                                    <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }}</option>
+                                @endforeach
+                            </select>
+                            @error('tractor_id') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <select wire:model.live="driver_id">
+                                <option value="">{{ __('pages.select_driver') }}</option>
+                                @foreach($drivers as $driver)
+                                    <option value="{{ $driver->id }}">{{ $driver->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('driver_id') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <select wire:model.live="zone_id">
+                                <option value="">{{ __('pages.select_zone') }}</option>
+                                @foreach($zones as $zone)
+                                    <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                                @endforeach
+                            </select>
+                            @error('zone_id') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <select wire:model.live="task_category_id">
+                                <option value="">{{ __('pages.select_task') }}</option>
+                                @foreach($taskCategories as $task)
+                                    <option value="{{ $task->id }}">{{ $task->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('task_category_id') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <input type="number" step="0.01" wire:model.live="working_duration">
+                            @error('working_duration') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <input type="number" step="0.01" wire:model.live="working_area">
+                            @error('working_area') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <input type="number" step="0.01" wire:model.live="diesel_start">
+                            @error('diesel_start') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <input type="number" step="0.01" wire:model.live="diesel_refill">
+                            @error('diesel_refill') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <input type="number" step="0.01" wire:model.live="diesel_end">
+                            @error('diesel_end') <small>{{ $message }}</small> @enderror
+                        </td>
+
+                        <td>
+                            <span class="excel-danger">
+                                {{ number_format($diesel_consumed, 2) }} L
+                            </span>
+                        </td>
+
+                        <td>
+                            <span class="excel-number">
+                                {{ number_format($diesel_per_hectare, 2) }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <span class="excel-number">
+                                {{ number_format($hectare_per_hour, 2) }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <span class="{{ $variance_fuel < 0 ? 'excel-danger' : 'excel-success' }}">
+                                {{ number_format($variance_fuel, 2) }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <input type="text"
+                                   class="excel-note-input"
+                                   wire:model.live="note"
+                                   placeholder="{{ __('pages.optional_note') }}">
+                            @error('note') <small>{{ $message }}</small> @enderror
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="excel-summary">
+            <div class="summary-card">
+                <div class="summary-label">{{ __('pages.diesel_consumed') }}</div>
+                <div class="summary-value">{{ number_format($diesel_consumed, 2) }} L</div>
             </div>
 
-            <div>
-                <label>{{ __('pages.tractor') }} *</label>
-                <select wire:model.live="tractor_id">
-                    <option value="">{{ __('pages.select_tractor') }}</option>
-                    @foreach($tractors as $tractor)
-                        <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }}</option>
-                    @endforeach
-                </select>
-                @error('tractor_id') <small>{{ $message }}</small> @enderror
+            <div class="summary-card">
+                <div class="summary-label">{{ __('pages.diesel_per_hectare') }}</div>
+                <div class="summary-value">{{ number_format($diesel_per_hectare, 2) }}</div>
             </div>
 
-            <div>
-                <label>{{ __('pages.driver') }} *</label>
-                <select wire:model.live="driver_id">
-                    <option value="">{{ __('pages.select_driver') }}</option>
-                    @foreach($drivers as $driver)
-                        <option value="{{ $driver->id }}">{{ $driver->name }}</option>
-                    @endforeach
-                </select>
-                @error('driver_id') <small>{{ $message }}</small> @enderror
+            <div class="summary-card">
+                <div class="summary-label">{{ __('pages.hectare_per_hour') }}</div>
+                <div class="summary-value">{{ number_format($hectare_per_hour, 2) }}</div>
             </div>
 
-            <div>
-                <label>{{ __('pages.zone') }} *</label>
-                <select wire:model.live="zone_id">
-                    <option value="">{{ __('pages.select_zone') }}</option>
-                    @foreach($zones as $zone)
-                        <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
-                    @endforeach
-                </select>
-                @error('zone_id') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div>
-                <label>{{ __('pages.task_category') }} *</label>
-                <select wire:model.live="task_category_id">
-                    <option value="">{{ __('pages.select_task') }}</option>
-                    @foreach($taskCategories as $task)
-                        <option value="{{ $task->id }}">{{ $task->name }}</option>
-                    @endforeach
-                </select>
-                @error('task_category_id') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div>
-                <label>{{ __('pages.working_duration') }} *</label>
-                <input type="number" step="0.01" wire:model.live="working_duration">
-                @error('working_duration') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div>
-                <label>{{ __('pages.working_area') }} *</label>
-                <input type="number" step="0.01" wire:model.live="working_area">
-                @error('working_area') <small>{{ $message }}</small> @enderror
+            <div class="summary-card">
+                <div class="summary-label">{{ __('pages.fuel_variance') }}</div>
+                <div class="summary-value" style="color: {{ $variance_fuel < 0 ? '#dc2626' : '#166534' }}">
+                    {{ number_format($variance_fuel, 2) }}
+                </div>
             </div>
         </div>
-    </div>
-
-    <div class="panel">
-        <h2 class="panel-title">{{ __('pages.diesel_information') }}</h2>
-
-        <div class="form-grid">
-            <div>
-                <label>{{ __('pages.diesel_start') }} *</label>
-                <input type="number" step="0.01" wire:model.live="diesel_start">
-                @error('diesel_start') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div>
-                <label>{{ __('pages.diesel_refill') }} *</label>
-                <input type="number" step="0.01" wire:model.live="diesel_refill">
-                @error('diesel_refill') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div>
-                <label>{{ __('pages.diesel_end') }} *</label>
-                <input type="number" step="0.01" wire:model.live="diesel_end">
-                @error('diesel_end') <small>{{ $message }}</small> @enderror
-            </div>
-        </div>
-    </div>
-
-    <div class="summary-grid">
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.diesel_consumed') }}</div>
-            <div class="summary-value">{{ number_format($diesel_consumed, 2) }} L</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.diesel_per_hectare') }}</div>
-            <div class="summary-value">{{ number_format($diesel_per_hectare, 2) }}</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.hectare_per_hour') }}</div>
-            <div class="summary-value">{{ number_format($hectare_per_hour, 2) }}</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.fuel_variance') }}</div>
-            <div class="summary-value" style="color: {{ $variance_fuel < 0 ? '#dc2626' : '#166534' }}">
-                {{ number_format($variance_fuel, 2) }}
-            </div>
-        </div>
-    </div>
-
-    <div class="panel">
-        <label>{{ __('pages.note') }}</label>
-        <textarea wire:model="note" placeholder="{{ __('pages.optional_note') }}"></textarea>
-
-        @error('diesel_consumed') <small>{{ $message }}</small> @enderror
 
         <div class="btn-row">
-            <button wire:click="update" class="btn">
+            <button type="button" wire:click="update" class="btn">
                 {{ __('pages.update_work_log') }}
             </button>
 

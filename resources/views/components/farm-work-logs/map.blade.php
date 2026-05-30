@@ -60,6 +60,7 @@ new class extends Component
 
 <div class="page">
     @include('components.shared-style')
+    @include('components.toast-alert')
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 

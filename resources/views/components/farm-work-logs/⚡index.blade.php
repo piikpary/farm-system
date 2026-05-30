@@ -71,6 +71,7 @@ new class extends Component
 
 <div class="page">
     @include('components.shared-style')
+    @include('components.toast-alert')
 
     <div class="page-header">
         <div>
@@ -125,9 +126,7 @@ new class extends Component
         </div>
     </div>
 
-    @if (session('success'))
-        <div class="alert">{{ session('success') }}</div>
-    @endif
+
 
     <div class="summary-grid">
         <div class="summary-card">
@@ -240,7 +239,7 @@ new class extends Component
                         <th>{{ __('pages.diesel_used') }}</th>
                         <th>{{ __('pages.lha') }}</th>
                         <th>{{ __('pages.hahr') }}</th>
-                        <th>{{ __('pages.variance') }}</th>
+                        {{-- <th>{{ __('pages.variance') }}</th> --}}
                         <th width="140">{{ __('pages.action') }}</th>
                     </tr>
                 </thead>
@@ -276,11 +275,7 @@ new class extends Component
 
                             <td>{{ number_format($log->hectare_per_hour, 2) }}</td>
 
-                            <td>
-                                <strong style="color: {{ $log->variance_fuel < 0 ? '#dc2626' : '#166534' }}">
-                                    {{ number_format($log->variance_fuel, 2) }}
-                                </strong>
-                            </td>
+                            
 
                             <td>
                                 <div class="table-actions">

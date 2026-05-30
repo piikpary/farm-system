@@ -42,6 +42,7 @@ new class extends Component
 
 <div class="page">
     @include('components.shared-style')
+    @include('components.toast-alert')
 
     <div class="page-header">
         <div>

@@ -40,6 +40,7 @@ new class extends Component
 
 <div class="page">
     @include('components.shared-style')
+    @include('components.toast-alert')
 
     <div class="page-header">
         <div>
@@ -66,9 +67,7 @@ new class extends Component
         </div>
     </div>
 
-    @if (session('success'))
-        <div class="alert">{{ session('success') }}</div>
-    @endif
+ 
 
     <div class="panel">
         <h2 class="panel-title">{{ __('pages.menu_visibility') }}</h2>
