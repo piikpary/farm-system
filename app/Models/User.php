@@ -39,6 +39,19 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    public function hasPermission($permissionKey)
+    {
+        if (!$this->role) {
+            return false;
+        }
+
+        return $this->role
+            ->permissions()
+            ->where('permission_key', $permissionKey)
+            ->where('status', 'active')
+            ->exists();
+    }
+
     public function createdFarmWorkLogs()
     {
         return $this->hasMany(FarmWorkLog::class, 'created_by');

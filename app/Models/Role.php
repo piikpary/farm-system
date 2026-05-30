@@ -12,8 +12,16 @@ class Role extends Model
         'status',
     ];
 
-    public function users()
+    public function permissions()
     {
-        return $this->hasMany(User::class);
+        return $this->belongsToMany(Permission::class, 'role_permission');
+    }
+
+    public function hasPermission($permissionKey)
+    {
+        return $this->permissions()
+            ->where('permission_key', $permissionKey)
+            ->where('status', 'active')
+            ->exists();
     }
 }
