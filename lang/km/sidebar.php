@@ -33,4 +33,9 @@ return [
     'english' => 'អង់គ្លេស',
     'khmer' => 'ខ្មែរ',
     'task_category_summary_report' => 'សង្ខេបការងារ',
+    'ai_settings' => 'ការកំណត់ AI',
+    'tractor_field_settings' => 'ការកំណត់វាលត្រាក់ទ័រ',
+    'zone_blocks' => 'ប្លុកតំបន់',
+'planting_cycle_types' => 'ប្រភេទវដ្តដាំដុះ',
+'block_registers' => 'បញ្ជីប្លុកដាំដុះ',
 ];

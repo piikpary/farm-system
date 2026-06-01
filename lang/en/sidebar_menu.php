@@ -11,4 +11,12 @@ return [
     'driver_report' => 'Driver Report',
     'zone_report' => 'Zone Report',
     'task_category_summary_report' => 'Task Category Summary',
+    'ai_settings' => 'AI Settings',
+    'driver_work_link' => 'Driver Work Link',
+    'block_registers' => 'Block Register',
+'zone_blocks' => 'Zone Blocks',
+'planting_cycle_types' => 'Cycle Types',
+'users' => 'Users',
+'roles' => 'Roles',
+'stock_fuel_edit' => 'Edit Fuel Stock',
 ];

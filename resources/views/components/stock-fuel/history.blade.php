@@ -4,9 +4,33 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\FuelTransaction;
 
+
 new class extends Component
 {
     use WithPagination;
+
+    public function getTotalStockInProperty()
+    {
+        return FuelTransaction::where('type', 'stock_in')->sum('quantity');
+    }
+
+    public function getTotalStockOutProperty()
+    {
+        return FuelTransaction::whereIn('type', [
+            'stock_out',
+            'refill_to_tractor',
+        ])->sum('quantity');
+    }
+
+    public function getNetFuelProperty()
+    {
+        return $this->totalStockIn - $this->totalStockOut;
+    }
+
+    public function getLatestBalanceProperty()
+    {
+        return FuelTransaction::latest()->value('balance_after') ?? 0;
+    }
 
     public function with()
     {
@@ -28,6 +52,75 @@ new class extends Component
 <div class="page">
     @include('components.shared-style')
     @include('components.toast-alert')
+
+    <style>
+        .excel-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+        }
+
+        .excel-table {
+            min-width: 1450px;
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        .excel-table th {
+            background: #f8fafc;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 12px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        .excel-table td {
+            padding: 14px 10px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .fuel-total-row {
+            background: #f8fafc;
+            font-weight: 900;
+            border-top: 2px solid #d1d5db;
+        }
+
+        .fuel-total-row td {
+            border-bottom: 0;
+            color: #0f172a;
+        }
+
+        .total-label {
+            text-align: right;
+            font-weight: 900;
+        }
+
+        .stock-in {
+            color: #15803d;
+            font-weight: 900;
+        }
+
+        .stock-out {
+            color: #dc2626;
+            font-weight: 900;
+        }
+
+        .net-fuel {
+            color: #0f172a;
+            font-weight: 900;
+        }
+
+        .balance {
+            color: #166534;
+            font-weight: 900;
+        }
+    </style>
 
     <div class="page-header">
         <div>
@@ -61,8 +154,8 @@ new class extends Component
     <div class="panel">
         <h2 class="panel-title">{{ __('pages.fuel_transaction_list') }}</h2>
 
-        <div class="table-wrap">
-            <table>
+        <div class="excel-table-wrap">
+            <table class="excel-table">
                 <thead>
                     <tr>
                         <th>{{ __('pages.date') }}</th>
@@ -83,7 +176,7 @@ new class extends Component
                         <tr>
                             <td>{{ optional($transaction->transaction_date)->format('d M Y') }}</td>
 
-                            <td>{{ $transaction->fuelStock->name ?? '-' }}</td>
+                            <td>{{ $transaction->fuelStock->stock_name ?? '-' }}</td>
 
                             <td>
                                 @if($transaction->type === 'stock_in')
@@ -117,17 +210,19 @@ new class extends Component
 
                             <td>
                                 @if($transaction->type === 'stock_in')
-                                    <strong style="color:#166534;">
+                                    <strong class="stock-in">
                                         +{{ number_format($transaction->quantity, 2) }} L
                                     </strong>
                                 @else
-                                    <strong style="color:#dc2626;">
+                                    <strong class="stock-out">
                                         -{{ number_format($transaction->quantity, 2) }} L
                                     </strong>
                                 @endif
                             </td>
 
-                            <td>{{ number_format($transaction->balance_after, 2) }} L</td>
+                            <td class="balance">
+                                {{ number_format($transaction->balance_after, 2) }} L
+                            </td>
 
                             <td>{{ $transaction->reference_no ?? '-' }}</td>
 
@@ -143,6 +238,40 @@ new class extends Component
                         </tr>
                     @endforelse
                 </tbody>
+
+                <tfoot>
+                    <tr class="fuel-total-row">
+                        <td colspan="5" class="total-label">
+                            Total
+                        </td>
+
+                        <td>
+                            In:
+                            <span class="stock-in">
+                                {{ number_format((float) $this->totalStockIn, 2) }} L
+                            </span>
+                            /
+                            Out:
+                            <span class="stock-out">
+                                {{ number_format((float) $this->totalStockOut, 2) }} L
+                            </span>
+                        </td>
+
+                        <td class="balance">
+                            {{ number_format((float) $this->latestBalance, 2) }} L
+                        </td>
+
+                        <td>
+                            Net:
+                            <span class="net-fuel">
+                                {{ number_format((float) $this->netFuel, 2) }} L
+                            </span>
+                        </td>
+
+                        <td>-</td>
+                        <td>-</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
 

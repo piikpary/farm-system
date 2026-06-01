@@ -33,4 +33,9 @@ return [
     'english' => 'English',
     'khmer' => 'Khmer',
     'task_category_summary_report' => 'Task Category Summary',
+    'ai_settings' => 'AI Settings',
+    'tractor_field_settings' => 'Tractor Field Settings',
+    'zone_blocks' => 'Zone Blocks',
+'planting_cycle_types' => 'Cycle Types',
+'block_registers' => 'Block Register',
 ];

@@ -283,6 +283,13 @@
             </section>
         </main>
     </div>
+    @php
+    $aiSetting = \App\Models\AiSetting::where('status', 'active')->first();
+    @endphp
+
+    @if(auth()->check() && $aiSetting && $aiSetting->is_enabled && $aiSetting->api_key)
+        @include('components.ai-help')
+    @endif
 
     @livewireScripts
 

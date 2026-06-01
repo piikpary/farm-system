@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DriverWorkAction;
 use App\Models\FarmWorkLog;
+use App\Services\GpsWorkCalculator;
 use Illuminate\Http\Request;
 
 class DriverWorkActionController extends Controller
@@ -19,7 +20,8 @@ class DriverWorkActionController extends Controller
             'action_at' => 'nullable|date',
         ]);
 
-        $log = FarmWorkLog::findOrFail($data['farm_work_log_id']);
+        $log = FarmWorkLog::with(['tractor', 'zone'])
+            ->findOrFail($data['farm_work_log_id']);
 
         $action = DriverWorkAction::create([
             'farm_work_log_id' => $log->id,
@@ -33,9 +35,42 @@ class DriverWorkActionController extends Controller
             'action_at' => $data['action_at'] ?? now(),
         ]);
 
+        if ($data['action_type'] === 'start_work') {
+            $log->update([
+                'work_status' => 'working',
+                'started_at' => $log->started_at ?? now(),
+            ]);
+        }
+
+        if ($data['action_type'] === 'pause_work') {
+            $log->update([
+                'work_status' => 'paused',
+            ]);
+        }
+
+        if ($data['action_type'] === 'resume_work') {
+            $log->update([
+                'work_status' => 'resumed',
+            ]);
+        }
+
+        if ($data['action_type'] === 'finish_work') {
+            $result = app(GpsWorkCalculator::class)->calculateForWorkLog($log);
+
+            $log->update([
+                'work_status' => 'finished',
+                'finished_at' => now(),
+                'gps_distance_meters' => $result['distance_meters'],
+                'estimated_plowed_area' => $result['estimated_plowed_area'],
+                'gps_progress_percent' => $result['progress_percent'],
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'action_id' => $action->id,
+            'work_status' => $log->fresh()->work_status,
+            'message' => 'Work action saved successfully.',
         ]);
     }
 }

@@ -56,4 +56,20 @@ return [
     'roles.edit' => 'កែប្រែតួនាទី',
     'roles.delete' => 'លុបតួនាទី',
     'roles.assign_permissions' => 'កំណត់សិទ្ធិឱ្យតួនាទី',
+    'ai_settings.view' => 'មើលការកំណត់ AI',
+    'ai_settings.update' => 'កែប្រែការកំណត់ AI',
+    'block_registers.view' => 'មើលបញ្ជីប្លុកដាំដុះ',
+'block_registers.create' => 'បង្កើតបញ្ជីប្លុកដាំដុះ',
+'block_registers.edit' => 'កែប្រែបញ្ជីប្លុកដាំដុះ',
+'block_registers.delete' => 'លុបបញ្ជីប្លុកដាំដុះ',
+
+'zone_blocks.view' => 'មើលប្លុកតំបន់',
+'zone_blocks.create' => 'បង្កើតប្លុកតំបន់',
+'zone_blocks.edit' => 'កែប្រែប្លុកតំបន់',
+'zone_blocks.delete' => 'លុបប្លុកតំបន់',
+
+'planting_cycle_types.view' => 'មើលប្រភេទវដ្តដាំដុះ',
+'planting_cycle_types.create' => 'បង្កើតប្រភេទវដ្តដាំដុះ',
+'planting_cycle_types.edit' => 'កែប្រែប្រភេទវដ្តដាំដុះ',
+'planting_cycle_types.delete' => 'លុបប្រភេទវដ្តដាំដុះ',
 ];

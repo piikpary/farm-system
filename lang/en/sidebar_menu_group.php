@@ -3,4 +3,5 @@
 return [
     'master_data' => 'Master Data',
     'reports' => 'Reports',
+    'settings' => 'Settings',
 ];

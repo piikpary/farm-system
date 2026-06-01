@@ -3,6 +3,7 @@
 use Livewire\Component;
 use App\Models\Driver;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 new class extends Component
 {
@@ -29,17 +30,30 @@ new class extends Component
     {
         $this->validate([
             'name' => 'required|string|max:150',
-            'phone' => 'nullable|string|max:50',
-            'address' => 'nullable|string',
-            'id_card_no' => 'nullable|string|max:100',
+
+            'phone' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::unique('drivers', 'phone')->ignore($this->driverId),
+            ],
+
+            'id_card_no' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('drivers', 'id_card_no')->ignore($this->driverId),
+            ],
+
+            'address' => 'nullable|string|max:1000',
             'status' => 'required|in:active,inactive',
         ]);
 
         Driver::findOrFail($this->driverId)->update([
             'name' => $this->name,
-            'phone' => $this->phone,
-            'address' => $this->address,
-            'id_card_no' => $this->id_card_no,
+            'phone' => $this->phone ?: null,
+            'address' => $this->address ?: null,
+            'id_card_no' => $this->id_card_no ?: null,
             'status' => $this->status,
             'updated_by' => Auth::id(),
         ]);

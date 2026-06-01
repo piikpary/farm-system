@@ -56,4 +56,20 @@ return [
     'roles.edit' => 'Edit Role',
     'roles.delete' => 'Delete Role',
     'roles.assign_permissions' => 'Assign Role Permissions',
+    'ai_settings.view' => 'View AI Settings',
+    'ai_settings.update' => 'Update AI Settings',
+    'block_registers.view' => 'View Block Registers',
+'block_registers.create' => 'Create Block Registers',
+'block_registers.edit' => 'Edit Block Registers',
+'block_registers.delete' => 'Delete Block Registers',
+
+'zone_blocks.view' => 'View Zone Blocks',
+'zone_blocks.create' => 'Create Zone Blocks',
+'zone_blocks.edit' => 'Edit Zone Blocks',
+'zone_blocks.delete' => 'Delete Zone Blocks',
+
+'planting_cycle_types.view' => 'View Planting Cycle Types',
+'planting_cycle_types.create' => 'Create Planting Cycle Types',
+'planting_cycle_types.edit' => 'Edit Planting Cycle Types',
+'planting_cycle_types.delete' => 'Delete Planting Cycle Types',
 ];

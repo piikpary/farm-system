@@ -45,4 +45,8 @@ class Zone extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+    public function blocks()
+{
+    return $this->hasMany(\App\Models\ZoneBlock::class);
+}
 }

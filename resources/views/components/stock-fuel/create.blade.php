@@ -5,101 +5,121 @@ use App\Models\FuelStock;
 use App\Models\FuelTransaction;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 new class extends Component
 {
-    public $fuel_stock_id = '';
-    public $name = 'Main Diesel Stock';
+    public $rows = [];
 
-    public $transaction_type = 'stock_in';
-    public $adjustment_mode = 'increase';
+    public function mount()
+    {
+        $this->rows = [
+            $this->emptyRow(),
+        ];
+    }
 
-    public $quantity = 0;
-    public $minimum_stock_alert = 0;
-    public $note;
+    public function emptyRow()
+    {
+        return [
+            'fuel_stock_id' => '',
+            'transaction_type' => 'stock_in',
+            'quantity' => 0,
+            'note' => '',
+        ];
+    }
+
+    public function addRow()
+    {
+        $this->rows[] = $this->emptyRow();
+    }
+
+    public function removeRow($index)
+    {
+        if (count($this->rows) <= 1) {
+            return;
+        }
+
+        unset($this->rows[$index]);
+        $this->rows = array_values($this->rows);
+    }
+
+    public function getTotalStockInProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return ($row['transaction_type'] ?? '') === 'stock_in'
+                ? (float) ($row['quantity'] ?? 0)
+                : 0;
+        });
+    }
+
+    public function getTotalStockOutProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return ($row['transaction_type'] ?? '') === 'stock_out'
+                ? (float) ($row['quantity'] ?? 0)
+                : 0;
+        });
+    }
+
+    public function getNetTotalProperty()
+    {
+        return $this->totalStockIn - $this->totalStockOut;
+    }
 
     public function save()
     {
         $this->validate([
-            'fuel_stock_id' => 'nullable|exists:fuel_stocks,id',
-            'name' => 'required_without:fuel_stock_id|nullable|string|max:150',
-            'transaction_type' => 'required|in:stock_in,adjustment',
-            'adjustment_mode' => 'required_if:transaction_type,adjustment|in:increase,decrease,set_balance',
-            'quantity' => 'required|numeric|min:0.01',
-            'minimum_stock_alert' => 'nullable|numeric|min:0',
-            'note' => 'nullable|string',
+            'rows' => 'required|array|min:1',
+            'rows.*.fuel_stock_id' => 'nullable|exists:fuel_stocks,id',
+            'rows.*.transaction_type' => 'required|in:stock_in,stock_out',
+            'rows.*.quantity' => 'required|numeric|min:0.01',
+            'rows.*.note' => 'nullable|string|max:1000',
         ]);
 
         DB::transaction(function () {
-            if ($this->fuel_stock_id) {
-                $stock = FuelStock::lockForUpdate()->findOrFail($this->fuel_stock_id);
-            } else {
-                $stock = FuelStock::create([
-                    'name' => $this->name,
-                    'opening_stock' => 0,
-                    'current_stock' => 0,
-                    'minimum_stock_alert' => $this->minimum_stock_alert ?: 0,
-                    'status' => 'active',
+            foreach ($this->rows as $row) {
+                $quantity = (float) $row['quantity'];
+
+                if (!empty($row['fuel_stock_id'])) {
+                    $stock = FuelStock::findOrFail($row['fuel_stock_id']);
+                } else {
+                    $stock = FuelStock::create([
+                        'name' => 'Main Diesel Stock',
+                        'opening_stock' => 0,
+                        'current_stock' => 0,
+                        'minimum_alert' => 0,
+                        'status' => 'active',
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+
+                if ($row['transaction_type'] === 'stock_out' && $stock->current_stock < $quantity) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'rows' => 'Not enough fuel stock for ' . $stock->name,
+                    ]);
+                }
+
+                if ($row['transaction_type'] === 'stock_in') {
+                    $stock->current_stock = (float) $stock->current_stock + $quantity;
+                } else {
+                    $stock->current_stock = (float) $stock->current_stock - $quantity;
+                }
+
+                $stock->updated_by = Auth::id();
+                $stock->save();
+
+                FuelTransaction::create([
+                    'fuel_stock_id' => $stock->id,
+                    'transaction_date' => now()->format('Y-m-d'),
+                    'type' => $row['transaction_type'],
+                    'quantity' => $quantity,
+                    'balance_after' => $stock->current_stock,
+                    'reference_no' => 'FUEL-' . now()->format('YmdHis') . '-' . $stock->id,
+                    'note' => $row['note'] ?: null,
                     'created_by' => Auth::id(),
                     'updated_by' => Auth::id(),
                 ]);
             }
-
-            $oldBalance = (float) $stock->current_stock;
-            $qty = (float) $this->quantity;
-
-            if ($this->transaction_type === 'stock_in') {
-                $newBalance = $oldBalance + $qty;
-                $transactionQty = $qty;
-                $type = 'stock_in';
-                $reference = 'STOCK-IN-' . now()->format('YmdHis');
-                $defaultNote = 'Fuel stock added';
-            } else {
-                $type = 'adjustment';
-                $reference = 'ADJUST-' . now()->format('YmdHis');
-
-                if ($this->adjustment_mode === 'increase') {
-                    $newBalance = $oldBalance + $qty;
-                    $transactionQty = $qty;
-                    $defaultNote = 'Fuel stock adjustment increase';
-                } elseif ($this->adjustment_mode === 'decrease') {
-                    if ($oldBalance < $qty) {
-                        throw ValidationException::withMessages([
-                            'quantity' => 'Cannot decrease more than current stock. Current stock: ' . number_format($oldBalance, 2) . ' L',
-                        ]);
-                    }
-
-                    $newBalance = $oldBalance - $qty;
-                    $transactionQty = $qty;
-                    $defaultNote = 'Fuel stock adjustment decrease';
-                } else {
-                    $newBalance = $qty;
-                    $transactionQty = abs($newBalance - $oldBalance);
-                    $defaultNote = 'Fuel stock balance corrected from ' . number_format($oldBalance, 2) . ' L to ' . number_format($newBalance, 2) . ' L';
-                }
-            }
-
-            $stock->current_stock = $newBalance;
-
-            if (!$this->fuel_stock_id) {
-                $stock->opening_stock = $newBalance;
-            }
-
-            $stock->updated_by = Auth::id();
-            $stock->save();
-
-            FuelTransaction::create([
-                'fuel_stock_id' => $stock->id,
-                'transaction_date' => now()->toDateString(),
-                'type' => $type,
-                'quantity' => $transactionQty,
-                'balance_after' => $stock->current_stock,
-                'reference_no' => $reference,
-                'note' => $this->note ?: $defaultNote,
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id(),
-            ]);
         });
 
         session()->flash('success', 'Fuel stock saved successfully.');
@@ -111,8 +131,8 @@ new class extends Component
     {
         return [
             'fuelStocks' => FuelStock::where('status', 'active')
-                ->orderBy('name')
-                ->get(),
+    ->orderBy('name')
+    ->get(),
         ];
     }
 };
@@ -123,10 +143,109 @@ new class extends Component
     @include('components.shared-style')
     @include('components.toast-alert')
 
+    <style>
+        .excel-toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .excel-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+        }
+
+        .excel-table {
+            min-width: 980px;
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        .excel-table th {
+            background: #f8fafc;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 12px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        .excel-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: middle;
+        }
+
+        .excel-table input,
+        .excel-table select {
+            width: 100%;
+            min-width: 150px;
+            height: 44px;
+            padding: 9px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 13px;
+            background: #fff;
+            font-weight: 700;
+        }
+
+        .row-no {
+            width: 45px;
+            min-width: 45px;
+            text-align: center;
+            font-weight: 900;
+            color: #64748b;
+        }
+
+        .excel-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .fuel-total-row {
+            background: #f8fafc;
+            font-weight: 900;
+            border-top: 2px solid #d1d5db;
+        }
+
+        .fuel-total-row td {
+            padding: 14px 10px;
+            color: #0f172a;
+            white-space: nowrap;
+            border-bottom: 0;
+        }
+
+        .total-label {
+            text-align: right;
+        }
+
+        .stock-in {
+            color: #15803d;
+            font-weight: 900;
+        }
+
+        .stock-out {
+            color: #dc2626;
+            font-weight: 900;
+        }
+
+        .net-total {
+            color: #0f172a;
+            font-weight: 900;
+        }
+    </style>
+
     <div class="page-header">
         <div>
-            <h1 class="page-title">{{ __('pages.add_adjust_fuel_stock') }}</h1>
-            <p class="page-subtitle">{{ __('pages.add_adjust_fuel_stock_subtitle') }}</p>
+            <h1 class="page-title">Add / Adjust Fuel Stock</h1>
+            <p class="page-subtitle">Input fuel stock in or stock out by Excel-style row.</p>
         </div>
 
         <div class="page-actions">
@@ -149,92 +268,120 @@ new class extends Component
     </div>
 
     <div class="panel">
-        <h2 class="panel-title">{{ __('pages.fuel_stock_information') }}</h2>
+        <div class="excel-toolbar">
+            <button type="button" wire:click="addRow" class="btn light">
+                + Add Row
+            </button>
+        </div>
 
-        <div class="form-grid">
-            <div>
-                <label>{{ __('pages.select_stock') }}</label>
-                <select wire:model.live="fuel_stock_id">
-                    <option value="">{{ __('pages.create_new_stock') }}</option>
+        <div class="excel-table-wrap">
+            <table class="excel-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Select Stock</th>
+                        <th>Transaction Type</th>
+                        <th>Fuel Quantity</th>
+                        <th>Note</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
 
-                    @foreach($fuelStocks as $stock)
-                        <option value="{{ $stock->id }}">
-                            {{ $stock->name }} - {{ number_format($stock->current_stock, 2) }} L
-                        </option>
+                <tbody>
+                    @foreach($rows as $index => $row)
+                        <tr>
+                            <td class="row-no">{{ $index + 1 }}</td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.fuel_stock_id">
+                                    <option value="">Create / Use Main Diesel Stock</option>
+                                    @foreach($fuelStocks as $stock)
+                                        <option value="{{ $stock->id }}">
+                                           {{ $stock->name }} - {{ number_format($stock->current_stock, 2) }} L
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                @error("rows.$index.fuel_stock_id")
+                                    <small>{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.transaction_type">
+                                    <option value="stock_in">Stock In</option>
+                                    <option value="stock_out">Stock Out</option>
+                                </select>
+
+                                @error("rows.$index.transaction_type")
+                                    <small>{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       step="0.01"
+                                       wire:model.live="rows.{{ $index }}.quantity">
+
+                                @error("rows.$index.quantity")
+                                    <small>{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
+                                <input type="text"
+                                       wire:model.live="rows.{{ $index }}.note"
+                                       placeholder="Reason or note">
+                            </td>
+
+                            <td>
+                                <div class="excel-actions">
+                                    <button type="button"
+                                            wire:click="removeRow({{ $index }})"
+                                            class="mini danger">
+                                        Remove
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
                     @endforeach
-                </select>
-                @error('fuel_stock_id') <small>{{ $message }}</small> @enderror
-            </div>
+                </tbody>
 
-            <div>
-                <label>{{ __('pages.stock_name') }} *</label>
-                <input type="text"
-                       wire:model="name"
-                       placeholder="{{ __('pages.stock_name') }}">
-                @error('name') <small>{{ $message }}</small> @enderror
-            </div>
+                <tfoot>
+                    <tr class="fuel-total-row">
+                        <td colspan="3" class="total-label">Total</td>
 
-            <div>
-                <label>{{ __('pages.minimum_alert') }}</label>
-                <input type="number"
-                       step="0.01"
-                       wire:model="minimum_stock_alert"
-                       placeholder="100">
-                @error('minimum_stock_alert') <small>{{ $message }}</small> @enderror
-            </div>
+                        <td>
+                            <span class="net-total">
+                                {{ number_format((float) $this->netTotal, 2) }} L
+                            </span>
+                        </td>
 
-            <div>
-                <label>{{ __('pages.transaction_type') }} *</label>
-                <select wire:model.live="transaction_type">
-                    <option value="stock_in">{{ __('pages.stock_in') }}</option>
-                    <option value="adjustment">{{ __('pages.adjustment') }}</option>
-                </select>
-                @error('transaction_type') <small>{{ $message }}</small> @enderror
-            </div>
+                        <td>
+                            In:
+                            <span class="stock-in">
+                                {{ number_format((float) $this->totalStockIn, 2) }} L
+                            </span>
+                            /
+                            Out:
+                            <span class="stock-out">
+                                {{ number_format((float) $this->totalStockOut, 2) }} L
+                            </span>
+                        </td>
 
-            @if($transaction_type === 'adjustment')
-                <div>
-                    <label>{{ __('pages.adjustment_type') }} *</label>
-                    <select wire:model.live="adjustment_mode">
-                        <option value="increase">{{ __('pages.increase_stock') }}</option>
-                        <option value="decrease">{{ __('pages.decrease_stock') }}</option>
-                        <option value="set_balance">{{ __('pages.set_exact_balance') }}</option>
-                    </select>
-                    @error('adjustment_mode') <small>{{ $message }}</small> @enderror
-                </div>
-            @endif
-
-            <div>
-                <label>
-                    @if($transaction_type === 'adjustment' && $adjustment_mode === 'set_balance')
-                        {{ __('pages.new_balance') }} *
-                    @else
-                        {{ __('pages.fuel_quantity') }} *
-                    @endif
-                </label>
-
-                <input type="number"
-                       step="0.01"
-                       wire:model="quantity"
-                       placeholder="0">
-                @error('quantity') <small>{{ $message }}</small> @enderror
-            </div>
-
-            <div style="grid-column: 1 / -1;">
-                <label>{{ __('pages.note') }}</label>
-                <textarea wire:model="note"
-                          placeholder="{{ __('pages.reason_or_note') }}"></textarea>
-                @error('note') <small>{{ $message }}</small> @enderror
-            </div>
+                        <td>-</td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
 
         <div class="btn-row">
-            <button wire:click="save" class="btn">
-                {{ __('pages.save_fuel_stock') }}
+            <button type="button" wire:click="save" class="btn">
+                Save Fuel Stock
             </button>
 
             <a href="{{ route('stock-fuel.index') }}" class="btn gray">
-                {{ __('pages.cancel') }}
+                Cancel
             </a>
         </div>
     </div>

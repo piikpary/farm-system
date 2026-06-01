@@ -24,11 +24,17 @@ new class extends Component
 
         $this->farmWorkLogId = $this->log->id;
 
-        $this->zonePolygon = $this->log->zone?->polygon_coordinates ?? [];
+        $polygon = $this->log->zone?->polygon_coordinates ?? [];
+
+        if (is_string($polygon)) {
+            $polygon = json_decode($polygon, true) ?: [];
+        }
+
+        $this->zonePolygon = $polygon;
 
         if ($this->log->zone && $this->log->zone->center_lat && $this->log->zone->center_lng) {
-            $this->centerLat = $this->log->zone->center_lat;
-            $this->centerLng = $this->log->zone->center_lng;
+            $this->centerLat = (float) $this->log->zone->center_lat;
+            $this->centerLng = (float) $this->log->zone->center_lng;
         }
 
         $this->trackPoints = $this->log->gpsTracks()
@@ -37,6 +43,8 @@ new class extends Component
             ->map(fn ($track) => [
                 'lat' => (float) $track->lat,
                 'lng' => (float) $track->lng,
+                'speed' => $track->speed,
+                'accuracy' => $track->accuracy,
                 'tracked_at' => optional($track->tracked_at)->format('Y-m-d H:i:s'),
             ])
             ->toArray();
@@ -147,9 +155,7 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.driver_action_map') }}</h1>
-            <p class="page-subtitle">
-                {{ __('pages.driver_action_map_subtitle') }}
-            </p>
+            <p class="page-subtitle">{{ __('pages.driver_action_map_subtitle') }}</p>
         </div>
 
         <div class="page-actions">
@@ -188,10 +194,36 @@ new class extends Component
         </div>
 
         <div class="summary-card">
+            <div class="summary-label">{{ __('pages.status') }}</div>
+            <div class="summary-value">{{ __('pages.' . ($log->work_status ?? 'pending')) }}</div>
+        </div>
+
+        <div class="summary-card">
             <div class="summary-label">{{ __('pages.actions_gps') }}</div>
             <div class="summary-value">
                 <span id="actionCount">{{ count($actionPoints) }}</span> /
                 <span id="gpsCount">{{ count($trackPoints) }}</span>
+            </div>
+        </div>
+
+        <div class="summary-card">
+            <div class="summary-label">{{ __('pages.gps_distance') }}</div>
+            <div class="summary-value" id="gpsDistance">
+                {{ number_format($log->gps_distance_meters ?? 0, 2) }} m
+            </div>
+        </div>
+
+        <div class="summary-card">
+            <div class="summary-label">{{ __('pages.estimated_plowed_area') }}</div>
+            <div class="summary-value" id="estimatedArea">
+                {{ number_format($log->estimated_plowed_area ?? 0, 4) }} ha
+            </div>
+        </div>
+
+        <div class="summary-card">
+            <div class="summary-label">{{ __('pages.gps_progress') }}</div>
+            <div class="summary-value" id="gpsProgress">
+                {{ number_format($log->gps_progress_percent ?? 0, 2) }}%
             </div>
         </div>
     </div>
@@ -338,36 +370,42 @@ new class extends Component
         }
 
         function drawTrackingLine() {
-            if (trackingLine) {
-                map.removeLayer(trackingLine);
-            }
+    if (trackingLine) {
+        map.removeLayer(trackingLine);
+    }
 
-            if (!trackPoints || trackPoints.length === 0) {
-                return;
-            }
+    if (!trackPoints || trackPoints.length === 0) {
+        return;
+    }
 
-            const latlngs = trackPoints.map(p => [p.lat, p.lng]);
+    const latlngs = trackPoints.map(p => [Number(p.lat), Number(p.lng)]);
 
-            trackingLine = L.polyline(latlngs, {
-                color: '#2563eb',
-                weight: 4,
-            }).addTo(map);
+    trackingLine = L.polyline(latlngs, {
+        color: '#2563eb',
+        weight: 6,
+        opacity: 1,
+    }).addTo(map);
 
-            const lastPoint = trackPoints[trackPoints.length - 1];
+    const lastPoint = trackPoints[trackPoints.length - 1];
 
-            lastLat = lastPoint.lat;
-            lastLng = lastPoint.lng;
+    lastLat = Number(lastPoint.lat);
+    lastLng = Number(lastPoint.lng);
 
-            if (liveMarker) {
-                map.removeLayer(liveMarker);
-            }
+    if (liveMarker) {
+        map.removeLayer(liveMarker);
+    }
 
-            liveMarker = L.marker([lastPoint.lat, lastPoint.lng])
-                .addTo(map)
-                .bindPopup(text.latestGpsPoint);
+    liveMarker = L.marker([lastLat, lastLng])
+        .addTo(map)
+        .bindPopup(text.latestGpsPoint);
 
-            document.getElementById('gpsCount').innerText = trackPoints.length;
-        }
+    document.getElementById('gpsCount').innerText = trackPoints.length;
+
+    map.fitBounds(trackingLine.getBounds(), {
+        padding: [50, 50],
+        maxZoom: 18,
+    });
+}
 
         function drawActionMarkers() {
             if (!actionPoints || actionPoints.length === 0) {
@@ -451,6 +489,8 @@ new class extends Component
                     const point = {
                         lat: lat,
                         lng: lng,
+                        speed: speed,
+                        accuracy: accuracy,
                         tracked_at: new Date().toISOString(),
                     };
 
@@ -563,7 +603,13 @@ new class extends Component
 
                 document.getElementById('actionCount').innerText = actionPoints.length;
 
-                alert(text.actionSaved + ': ' + (actionLabels[actionType] ?? actionType));
+                if (actionType === 'finish_work') {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 800);
+                } else {
+                    alert(text.actionSaved + ': ' + (actionLabels[actionType] ?? actionType));
+                }
             })
             .catch(error => {
                 console.error(error);

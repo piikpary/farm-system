@@ -12,4 +12,6 @@ return [
     'settings' => 'Settings',
     'users' => 'Users',
     'roles' => 'Roles',
+    'Farm Operation' => 'Farm Operation',
+'Master Data' => 'Master Data',
 ];

@@ -6,6 +6,7 @@ use App\Models\Tractor;
 use App\Models\Driver;
 use App\Models\Zone;
 use App\Models\TaskCategory;
+use App\Models\SidebarMenuSetting;
 
 new class extends Component
 {
@@ -19,8 +20,20 @@ new class extends Component
 
     public function delete($id)
     {
+        if (!auth()->user()->hasPermission('work_logs.delete')) {
+            abort(403, 'Permission denied.');
+        }
+
         FarmWorkLog::findOrFail($id)->delete();
+
         session()->flash('success', __('pages.work_log_deleted_success'));
+    }
+
+    public function driverLinkEnabled()
+    {
+        return SidebarMenuSetting::where('menu_key', 'driver_work_link')
+            ->where('is_visible', true)
+            ->exists();
     }
 
     public function resetFilter()
@@ -46,13 +59,22 @@ new class extends Component
             ->when($this->zone_id, fn ($q) => $q->where('zone_id', $this->zone_id))
             ->when($this->task_category_id, fn ($q) => $q->where('task_category_id', $this->task_category_id))
             ->when($this->search, function ($q) {
-                $q->whereHas('tractor', fn ($sub) => $sub->where('tractor_no', 'like', '%' . $this->search . '%'))
-                    ->orWhereHas('driver', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'))
-                    ->orWhereHas('zone', fn ($sub) => $sub->where('zone_code', 'like', '%' . $this->search . '%'))
-                    ->orWhereHas('taskCategory', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'));
+                $q->where(function ($query) {
+                    $query->whereHas('tractor', fn ($sub) => $sub->where('tractor_no', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('driver', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('zone', fn ($sub) => $sub->where('zone_code', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('taskCategory', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'));
+                });
             })
             ->latest()
             ->get();
+
+        $totalArea = $logs->sum('working_area');
+        $totalHour = $logs->sum('working_duration');
+        $totalDieselRefill = $logs->sum('diesel_refill');
+        $totalDieselUsed = $logs->sum('diesel_consumed');
+        $totalGpsDistance = $logs->sum('gps_distance_meters');
+        $totalEstimatedPlowedArea = $logs->sum('estimated_plowed_area');
 
         return [
             'logs' => $logs,
@@ -60,9 +82,16 @@ new class extends Component
             'drivers' => Driver::where('status', 'active')->orderBy('name')->get(),
             'zones' => Zone::where('status', 'active')->orderBy('zone_code')->get(),
             'taskCategories' => TaskCategory::where('status', 'active')->orderBy('name')->get(),
-            'totalArea' => $logs->sum('working_area'),
-            'totalHour' => $logs->sum('working_duration'),
-            'totalDiesel' => $logs->sum('diesel_consumed'),
+
+            'totalHour' => $totalHour,
+            'totalArea' => $totalArea,
+            'totalDieselRefill' => $totalDieselRefill,
+            'totalDieselUsed' => $totalDieselUsed,
+            'totalLHa' => $totalArea > 0 ? $totalDieselUsed / $totalArea : 0,
+            'totalHaHr' => $totalHour > 0 ? $totalArea / $totalHour : 0,
+            'totalGpsDistance' => $totalGpsDistance,
+            'totalEstimatedPlowedArea' => $totalEstimatedPlowedArea,
+            'totalGpsProgress' => $totalArea > 0 ? ($totalEstimatedPlowedArea / $totalArea) * 100 : 0,
         ];
     }
 };
@@ -92,61 +121,41 @@ new class extends Component
                 </a>
             </div>
 
-            <a href="{{ route('farm-work-logs.export.csv', [
-                'search' => $search,
-                'date_from' => $date_from,
-                'date_to' => $date_to,
-                'tractor_id' => $tractor_id,
-                'driver_id' => $driver_id,
-                'zone_id' => $zone_id,
-                'task_category_id' => $task_category_id,
-            ]) }}" class="btn light">
-                {{ __('pages.export_csv') }}
-            </a>
+            @if(auth()->user()->hasPermission('work_logs.export'))
+                <a href="{{ route('farm-work-logs.export.csv', [
+                    'search' => $search,
+                    'date_from' => $date_from,
+                    'date_to' => $date_to,
+                    'tractor_id' => $tractor_id,
+                    'driver_id' => $driver_id,
+                    'zone_id' => $zone_id,
+                    'task_category_id' => $task_category_id,
+                ]) }}" class="btn light">
+                    {{ __('pages.export_csv') }}
+                </a>
 
-            <a href="{{ route('farm-work-logs.export.excel', [
-                'search' => $search,
-                'date_from' => $date_from,
-                'date_to' => $date_to,
-                'tractor_id' => $tractor_id,
-                'driver_id' => $driver_id,
-                'zone_id' => $zone_id,
-                'task_category_id' => $task_category_id,
-            ]) }}" class="btn light">
-                {{ __('pages.export_excel') }}
-            </a>
+                <a href="{{ route('farm-work-logs.export.excel', [
+                    'search' => $search,
+                    'date_from' => $date_from,
+                    'date_to' => $date_to,
+                    'tractor_id' => $tractor_id,
+                    'driver_id' => $driver_id,
+                    'zone_id' => $zone_id,
+                    'task_category_id' => $task_category_id,
+                ]) }}" class="btn light">
+                    {{ __('pages.export_excel') }}
+                </a>
+            @endif
 
             <a href="{{ route('dashboard') }}" class="btn gray">
                 {{ __('pages.dashboard_button') }}
             </a>
 
-            <a href="{{ route('farm-work-logs.create') }}" class="btn">
-                {{ __('pages.add_work_log') }}
-            </a>
-        </div>
-    </div>
-
-
-
-    <div class="summary-grid">
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.total_area') }}</div>
-            <div class="summary-value">{{ number_format($totalArea, 2) }} ha</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.total_hours') }}</div>
-            <div class="summary-value">{{ number_format($totalHour, 2) }} hr</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.total_diesel') }}</div>
-            <div class="summary-value">{{ number_format($totalDiesel, 2) }} L</div>
-        </div>
-
-        <div class="summary-card">
-            <div class="summary-label">{{ __('pages.records') }}</div>
-            <div class="summary-value">{{ number_format($logs->count()) }}</div>
+            @if(auth()->user()->hasPermission('work_logs.create'))
+                <a href="{{ route('farm-work-logs.create') }}" class="btn">
+                    {{ __('pages.add_work_log') }}
+                </a>
+            @endif
         </div>
     </div>
 
@@ -227,6 +236,7 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>{{ __('pages.date') }}</th>
+                        <th>{{ __('pages.status') }}</th>
                         <th>{{ __('pages.tractor') }}</th>
                         <th>{{ __('pages.driver') }}</th>
                         <th>{{ __('pages.zone') }}</th>
@@ -239,8 +249,10 @@ new class extends Component
                         <th>{{ __('pages.diesel_used') }}</th>
                         <th>{{ __('pages.lha') }}</th>
                         <th>{{ __('pages.hahr') }}</th>
-                        {{-- <th>{{ __('pages.variance') }}</th> --}}
-                        <th width="140">{{ __('pages.action') }}</th>
+                        <th>{{ __('pages.gps_distance') }}</th>
+                        <th>{{ __('pages.estimated_plowed_area') }}</th>
+                        <th>{{ __('pages.gps_progress') }}</th>
+                        <th width="180">{{ __('pages.action') }}</th>
                     </tr>
                 </thead>
 
@@ -249,22 +261,24 @@ new class extends Component
                         <tr>
                             <td>{{ optional($log->work_date)->format('d M Y') }}</td>
 
+                            <td>
+                                @php
+                                    $status = $log->work_status ?? 'pending';
+                                @endphp
+
+                                <span class="status {{ $status }}">
+                                    {{ __('pages.' . $status) }}
+                                </span>
+                            </td>
+
                             <td>{{ $log->tractor->tractor_no ?? '-' }}</td>
-
                             <td>{{ $log->driver->name ?? '-' }}</td>
-
                             <td>{{ $log->zone->zone_code ?? '-' }}</td>
-
                             <td>{{ $log->taskCategory->name ?? '-' }}</td>
-
                             <td>{{ number_format($log->working_duration, 2) }}</td>
-
                             <td>{{ number_format($log->working_area, 2) }}</td>
-
                             <td>{{ number_format($log->diesel_start, 2) }}</td>
-
                             <td>{{ number_format($log->diesel_refill, 2) }}</td>
-
                             <td>{{ number_format($log->diesel_end, 2) }}</td>
 
                             <td>
@@ -272,35 +286,72 @@ new class extends Component
                             </td>
 
                             <td>{{ number_format($log->diesel_per_hectare, 2) }}</td>
-
                             <td>{{ number_format($log->hectare_per_hour, 2) }}</td>
-
-                            
+                            <td>{{ number_format($log->gps_distance_meters ?? 0, 2) }} m</td>
+                            <td>{{ number_format($log->estimated_plowed_area ?? 0, 4) }} ha</td>
+                            <td>{{ number_format($log->gps_progress_percent ?? 0, 2) }}%</td>
 
                             <td>
                                 <div class="table-actions">
-                                    <a href="{{ route('farm-work-logs.map', $log->id) }}" class="mini">
-                                        {{ __('pages.map') }}
-                                    </a>
+                                    @if(auth()->user()->hasPermission('work_logs.map'))
+                                        <a href="{{ route('farm-work-logs.map', $log->id) }}" class="mini">
+                                            {{ __('pages.map') }}
+                                        </a>
+                                    @endif
 
-                                    <a href="{{ route('farm-work-logs.edit', $log->id) }}" class="mini">
-                                        {{ __('pages.edit') }}
-                                    </a>
+                                    @if($this->driverLinkEnabled() && $log->driver_access_token)
+                                        <a href="{{ route('driver.work.show', $log->driver_access_token) }}"
+                                           target="_blank"
+                                           class="mini">
+                                            {{ __('pages.driver_link') }}
+                                        </a>
+                                    @endif
 
-                                    <button wire:click="delete({{ $log->id }})" class="mini danger">
-                                        {{ __('pages.delete') }}
-                                    </button>
+                                    @if(auth()->user()->hasPermission('work_logs.edit'))
+                                        <a href="{{ route('farm-work-logs.edit', $log->id) }}" class="mini">
+                                            {{ __('pages.edit') }}
+                                        </a>
+                                    @endif
+
+                                    @if(auth()->user()->hasPermission('work_logs.delete'))
+                                        <button wire:click="delete({{ $log->id }})" class="mini danger">
+                                            {{ __('pages.delete') }}
+                                        </button>
+                                    @endif
                                 </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="15" class="empty">
+                            <td colspan="18" class="empty">
                                 {{ __('pages.no_work_log_found') }}
                             </td>
                         </tr>
                     @endforelse
                 </tbody>
+
+                @if($logs->count() > 0)
+                    <tfoot>
+                        <tr style="background:#f8fafc; font-weight:900;">
+                            <td colspan="6" style="text-align:right;">
+                                {{ __('pages.total') }}
+                            </td>
+
+                            <td>{{ number_format($totalHour, 2) }}</td>
+                            <td>{{ number_format($totalArea, 2) }}</td>
+                            <td>-</td>
+                            <td>{{ number_format($totalDieselRefill, 2) }}</td>
+                            <td>-</td>
+                            <td>{{ number_format($totalDieselUsed, 2) }}</td>
+                            <td>{{ number_format($totalLHa, 2) }}</td>
+                            <td>{{ number_format($totalHaHr, 2) }}</td>
+                            <td>{{ number_format($totalGpsDistance, 2) }} m</td>
+                            <td>{{ number_format($totalEstimatedPlowedArea, 4) }} ha</td>
+                            <td>{{ number_format($totalGpsProgress, 2) }}%</td>
+                            <td>-</td>
+                        </tr>
+                    </tfoot>
+                @endif
             </table>
         </div>
     </div>

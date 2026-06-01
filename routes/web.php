@@ -6,6 +6,9 @@ use App\Http\Controllers\DriverWorkActionController;
 use App\Http\Controllers\FarmWorkLogExportController;
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\TaskCategorySummaryReportController;
+use App\Http\Controllers\AiHelpController;
+use App\Http\Controllers\DriverMobileWorkController;
+use Livewire\Volt\Volt;
 
 Route::middleware(['setLocale'])->group(function () {
     Route::get('/', function () {
@@ -17,6 +20,15 @@ Route::middleware(['setLocale'])->group(function () {
 });
 
 Route::middleware(['auth', 'setLocale'])->group(function () {
+    /*
+    |--------------------------------------------------------------------------
+    | AI Help
+    |--------------------------------------------------------------------------
+    */
+    Route::post('/ai-help/ask', [AiHelpController::class, 'ask'])
+        ->middleware('permission:dashboard.view')
+        ->name('ai-help.ask');
+
     /*
     |--------------------------------------------------------------------------
     | Dashboard
@@ -205,6 +217,15 @@ Route::middleware(['auth', 'setLocale'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | AI Settings
+    |--------------------------------------------------------------------------
+    */
+    Route::livewire('/ai-settings', 'settings.ai-settings')
+        ->middleware('permission:ai_settings.view')
+        ->name('ai-settings.index');
+
+    /*
+    |--------------------------------------------------------------------------
     | Users
     |--------------------------------------------------------------------------
     */
@@ -236,6 +257,71 @@ Route::middleware(['auth', 'setLocale'])->group(function () {
     Route::livewire('/roles/{role}/edit', 'roles.edit')
         ->middleware('permission:roles.edit')
         ->name('roles.edit');
+
+    Route::get('/debug-ai-setting', function () {
+    $setting = \App\Models\AiSetting::where('status', 'active')->first();
+
+    return [
+        'exists' => (bool) $setting,
+        'id' => $setting?->id,
+        'provider' => $setting?->provider,
+        'model' => $setting?->model,
+        'enabled' => $setting?->is_enabled,
+        'has_key' => !empty($setting?->api_key),
+        'key_start' => $setting?->api_key ? substr($setting->api_key, 0, 5) : null,
+    ];
+})->middleware('auth');
+
+    Route::get('/driver/work/{token}', [DriverMobileWorkController::class, 'show'])
+        ->name('driver.work.show');
+
+    Route::post('/driver/work/{token}/action', [DriverMobileWorkController::class, 'action'])
+        ->name('driver.work.action');
+
+    Route::post('/driver/work/{token}/gps', [DriverMobileWorkController::class, 'gps'])
+        ->name('driver.work.gps');
+
+    Route::livewire('/tractor-field-settings', 'settings.tractor-fields')
+    ->middleware('permission:tractor_field_settings.view')
+    ->name('tractor-field-settings.index');
+
+    Route::livewire('/zone-blocks', 'zone-blocks.index')
+    ->middleware('permission:zone_blocks.view')
+    ->name('zone-blocks.index');
+
+Route::livewire('/zone-blocks/create', 'zone-blocks.create')
+    ->middleware('permission:zone_blocks.create')
+    ->name('zone-blocks.create');
+
+Route::livewire('/zone-blocks/{block}/edit', 'zone-blocks.edit')
+    ->middleware('permission:zone_blocks.edit')
+    ->name('zone-blocks.edit');
+
+
+Route::livewire('/planting-cycle-types', 'planting-cycle-types.index')
+    ->middleware('permission:planting_cycle_types.view')
+    ->name('planting-cycle-types.index');
+
+Route::livewire('/planting-cycle-types/create', 'planting-cycle-types.create')
+    ->middleware('permission:planting_cycle_types.create')
+    ->name('planting-cycle-types.create');
+
+Route::livewire('/planting-cycle-types/{cycle}/edit', 'planting-cycle-types.edit')
+    ->middleware('permission:planting_cycle_types.edit')
+    ->name('planting-cycle-types.edit');
+
+
+Route::livewire('/block-registers', 'block-registers.index')
+    ->middleware('permission:block_registers.view')
+    ->name('block-registers.index');
+
+Route::livewire('/block-registers/create', 'block-registers.create')
+    ->middleware('permission:block_registers.create')
+    ->name('block-registers.create');
+
+Route::livewire('/block-registers/{register}/edit', 'block-registers.edit')
+    ->middleware('permission:block_registers.edit')
+    ->name('block-registers.edit');
 });
 
 require __DIR__.'/auth.php';

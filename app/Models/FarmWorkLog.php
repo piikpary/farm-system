@@ -3,51 +3,52 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-
+use Illuminate\Support\Str;
 class FarmWorkLog extends Model
 {
     protected $fillable = [
-        'work_date',
-        'tractor_id',
-        'driver_id',
-        'zone_id',
-        'task_category_id',
+    'work_date',
+    'work_status',
+    'started_at',
+    'finished_at',
 
-        'working_duration',
-        'working_area',
+    'tractor_id',
+    'driver_id',
+    'zone_id',
+    'task_category_id',
 
-        'diesel_start',
-        'diesel_refill',
-        'diesel_end',
+    'working_duration',
+    'working_area',
 
-        'diesel_consumed',
-        'diesel_per_hectare',
-        'hectare_per_hour',
+    'gps_distance_meters',
+    'estimated_plowed_area',
+    'gps_progress_percent',
+    'driver_access_token',
+    'diesel_start',
+    'diesel_refill',
+    'diesel_end',
+    'diesel_consumed',
+    'diesel_per_hectare',
+    'hectare_per_hour',
+    'request_fuel_per_hectare',
+    'request_fuel',
+    'variance_fuel',
+    'zone_block_id',
+    'note',
+    'created_by',
+    'updated_by',
+];
 
-        'request_fuel_per_hectare',
-        'request_fuel',
-        'variance_fuel',
-
-        'note',
-
-        'created_by',
-        'updated_by',
-    ];
-
-    protected $casts = [
-        'work_date' => 'date',
-        'working_duration' => 'decimal:2',
-        'working_area' => 'decimal:2',
-        'diesel_start' => 'decimal:2',
-        'diesel_refill' => 'decimal:2',
-        'diesel_end' => 'decimal:2',
-        'diesel_consumed' => 'decimal:2',
-        'diesel_per_hectare' => 'decimal:2',
-        'hectare_per_hour' => 'decimal:2',
-        'request_fuel_per_hectare' => 'decimal:2',
-        'request_fuel' => 'decimal:2',
-        'variance_fuel' => 'decimal:2',
-    ];
+protected $casts = [
+    'work_date' => 'date',
+    'started_at' => 'datetime',
+    'finished_at' => 'datetime',
+    'working_duration' => 'decimal:2',
+    'working_area' => 'decimal:2',
+    'gps_distance_meters' => 'decimal:2',
+    'estimated_plowed_area' => 'decimal:4',
+    'gps_progress_percent' => 'decimal:2',
+];
 
     public function tractor()
     {
@@ -91,4 +92,21 @@ class FarmWorkLog extends Model
     {
         return $this->hasMany(DriverWorkAction::class);
     }
+    public function zoneBlock()
+{
+    return $this->belongsTo(\App\Models\ZoneBlock::class);
+}
+    protected static function booted()
+{
+    static::creating(function ($log) {
+        if (empty($log->driver_access_token)) {
+            $log->driver_access_token = Str::random(64);
+        }
+
+        if (empty($log->work_status)) {
+            $log->work_status = 'pending';
+        }
+    });
+}
+    
 }

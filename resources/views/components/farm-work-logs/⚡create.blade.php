@@ -88,6 +88,44 @@ new class extends Component
         return $hour > 0 ? $area / $hour : 0;
     }
 
+    public function getTotalHourProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return (float) ($row['working_duration'] ?? 0);
+        });
+    }
+
+    public function getTotalAreaProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return (float) ($row['working_area'] ?? 0);
+        });
+    }
+
+    public function getTotalDieselRefillProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return (float) ($row['diesel_refill'] ?? 0);
+        });
+    }
+
+    public function getTotalDieselUsedProperty()
+    {
+        return collect($this->rows)->sum(function ($row) {
+            return $this->calculateDieselUsed($row);
+        });
+    }
+
+    public function getAverageLhaProperty()
+    {
+        return $this->totalArea > 0 ? $this->totalDieselUsed / $this->totalArea : 0;
+    }
+
+    public function getAverageHaHrProperty()
+    {
+        return $this->totalHour > 0 ? $this->totalArea / $this->totalHour : 0;
+    }
+
     public function save()
     {
         if (!auth()->user()->hasPermission('work_logs.create')) {
@@ -219,15 +257,6 @@ new class extends Component
             flex-wrap: wrap;
         }
 
-        .excel-note {
-            background: #ecfdf5;
-            color: #166534;
-            border: 1px solid #bbf7d0;
-            padding: 10px 12px;
-            border-radius: 12px;
-            font-weight: 800;
-        }
-
         .excel-table-wrap {
             overflow-x: auto;
             border: 1px solid #e5e7eb;
@@ -302,16 +331,32 @@ new class extends Component
             gap: 6px;
         }
 
-        .excel-summary {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 14px;
-            margin-top: 16px;
+        .work-total-row {
+            background: #f8fafc;
+            font-weight: 900;
+            border-top: 2px solid #d1d5db;
+        }
+
+        .work-total-row td {
+            padding: 14px 10px;
+            color: #0f172a;
+            white-space: nowrap;
+            border-bottom: 0;
+        }
+
+        .work-total-row .total-label {
+            text-align: right;
+            font-weight: 900;
+        }
+
+        .work-total-row .total-diesel {
+            color: #dc2626;
+            font-weight: 900;
         }
 
         @media (max-width: 900px) {
-            .excel-summary {
-                grid-template-columns: 1fr 1fr;
+            .excel-table {
+                min-width: 1700px;
             }
         }
     </style>
@@ -319,7 +364,6 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.add_work_log') }}</h1>
-            {{-- <p class="page-subtitle">{{ __('pages.add_work_log_excel_subtitle') }}</p> --}}
         </div>
 
         <div class="page-actions">
@@ -341,12 +385,8 @@ new class extends Component
         </div>
     </div>
 
-    
-
     <div class="panel">
         <div class="excel-toolbar">
-            
-
             <button type="button" wire:click="addRow" class="btn light">
                 + {{ __('pages.add_row') }}
             </button>
@@ -495,43 +535,35 @@ new class extends Component
                         </tr>
                     @endforeach
                 </tbody>
+
+                <tfoot>
+                    <tr class="work-total-row">
+                        <td colspan="6" class="total-label">Total</td>
+
+                        <td>{{ number_format((float) $this->totalHour, 2) }}</td>
+                        <td>{{ number_format((float) $this->totalArea, 2) }}</td>
+
+                        <td>-</td>
+
+                        <td>{{ number_format((float) $this->totalDieselRefill, 2) }}</td>
+
+                        <td>-</td>
+
+                        <td class="total-diesel">
+                            {{ number_format((float) $this->totalDieselUsed, 2) }}
+                        </td>
+
+                        <td>{{ number_format((float) $this->averageLha, 2) }}</td>
+                        <td>{{ number_format((float) $this->averageHaHr, 2) }}</td>
+
+                        <td>-</td>
+                        <td>-</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
 
-        @php
-            $totalArea = collect($rows)->sum(fn ($row) => (float) ($row['working_area'] ?? 0));
-            $totalHour = collect($rows)->sum(fn ($row) => (float) ($row['working_duration'] ?? 0));
-            $totalDiesel = collect($rows)->sum(fn ($row) => $this->calculateDieselUsed($row));
-            $totalRows = count($rows);
-        @endphp
-
-        <div class="excel-summary">
-            <div class="summary-card">
-                <div class="summary-label">{{ __('pages.total_rows') }}</div>
-                <div class="summary-value">{{ $totalRows }}</div>
-            </div>
-
-            <div class="summary-card">
-                <div class="summary-label">{{ __('pages.total_area') }}</div>
-                <div class="summary-value">{{ number_format($totalArea, 2) }} ha</div>
-            </div>
-
-            <div class="summary-card">
-                <div class="summary-label">{{ __('pages.total_hours') }}</div>
-                <div class="summary-value">{{ number_format($totalHour, 2) }} hr</div>
-            </div>
-
-            <div class="summary-card">
-                <div class="summary-label">{{ __('pages.total_diesel') }}</div>
-                <div class="summary-value">{{ number_format($totalDiesel, 2) }} L</div>
-            </div>
-        </div>
-
         <div class="btn-row">
-            {{-- <button type="button" wire:click="addRow" class="btn light">
-                + {{ __('pages.add_row') }}
-            </button> --}}
-
             <button type="button" wire:click="save" class="btn">
                 {{ __('pages.save_all_work_logs') }}
             </button>

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\FarmWorkLogsExport;
 use App\Models\FarmWorkLog;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FarmWorkLogExportController extends Controller
@@ -22,11 +24,11 @@ class FarmWorkLogExportController extends Controller
         return response()->streamDownload(function () use ($logs) {
             $file = fopen('php://output', 'w');
 
-            // UTF-8 BOM for Excel readable CSV
             fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
             fputcsv($file, [
                 'Date',
+                'Status',
                 'Tractor',
                 'Driver',
                 'Zone',
@@ -39,6 +41,9 @@ class FarmWorkLogExportController extends Controller
                 'Diesel Used',
                 'L/ha',
                 'ha/hr',
+                'GPS Distance',
+                'Estimated Plowed Area',
+                'GPS Progress',
                 'Variance',
                 'Note',
             ]);
@@ -46,19 +51,23 @@ class FarmWorkLogExportController extends Controller
             foreach ($logs as $log) {
                 fputcsv($file, [
                     optional($log->work_date)->format('d M Y'),
+                    ucfirst($log->work_status ?? 'pending'),
                     $log->tractor->tractor_no ?? '',
                     $log->driver->name ?? '',
                     $log->zone->zone_code ?? '',
                     $log->taskCategory->name ?? '',
-                    number_format($log->working_duration, 2, '.', ''),
-                    number_format($log->working_area, 2, '.', ''),
-                    number_format($log->diesel_start, 2, '.', ''),
-                    number_format($log->diesel_refill, 2, '.', ''),
-                    number_format($log->diesel_end, 2, '.', ''),
-                    number_format($log->diesel_consumed, 2, '.', ''),
-                    number_format($log->diesel_per_hectare, 2, '.', ''),
-                    number_format($log->hectare_per_hour, 2, '.', ''),
-                    number_format($log->variance_fuel, 2, '.', ''),
+                    number_format($log->working_duration ?? 0, 2, '.', ''),
+                    number_format($log->working_area ?? 0, 2, '.', ''),
+                    number_format($log->diesel_start ?? 0, 2, '.', ''),
+                    number_format($log->diesel_refill ?? 0, 2, '.', ''),
+                    number_format($log->diesel_end ?? 0, 2, '.', ''),
+                    number_format($log->diesel_consumed ?? 0, 2, '.', ''),
+                    number_format($log->diesel_per_hectare ?? 0, 2, '.', ''),
+                    number_format($log->hectare_per_hour ?? 0, 2, '.', ''),
+                    number_format($log->gps_distance_meters ?? 0, 2, '.', ''),
+                    number_format($log->estimated_plowed_area ?? 0, 4, '.', ''),
+                    number_format($log->gps_progress_percent ?? 0, 2, '.', ''),
+                    number_format($log->variance_fuel ?? 0, 2, '.', ''),
                     $log->note ?? '',
                 ]);
             }
@@ -69,16 +78,20 @@ class FarmWorkLogExportController extends Controller
 
     public function excel(Request $request)
     {
-        $fileName = 'farm-work-logs-' . now()->format('Y-m-d-His') . '.xls';
-
-        $logs = $this->queryLogs($request)->get();
-
-        return response()->view('exports.farm-work-logs-excel', [
-            'logs' => $logs,
-        ], 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"$fileName\"",
+        $filters = $request->only([
+            'search',
+            'date_from',
+            'date_to',
+            'tractor_id',
+            'driver_id',
+            'zone_id',
+            'task_category_id',
         ]);
+
+        return Excel::download(
+            new FarmWorkLogsExport($filters),
+            'farm-work-logs-' . now()->format('Y-m-d-His') . '.xlsx'
+        );
     }
 
     private function queryLogs(Request $request)

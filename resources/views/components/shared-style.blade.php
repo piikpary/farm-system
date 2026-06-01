@@ -114,7 +114,135 @@ table {
     gap: 14px;
     margin-bottom: 14px;
 }
+.ai-help-box {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 9999;
+}
 
+.ai-help-button {
+    border: 0;
+    background: #15803d;
+    color: #ffffff;
+    padding: 12px 18px;
+    border-radius: 999px;
+    font-weight: 900;
+    box-shadow: 0 12px 30px rgba(21, 128, 61, .30);
+    cursor: pointer;
+}
+
+.ai-help-panel {
+    position: absolute;
+    right: 0;
+    bottom: 58px;
+    width: 390px;
+    max-width: calc(100vw - 30px);
+    background: #ffffff;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 22px 60px rgba(15, 23, 42, .22);
+    overflow: hidden;
+}
+
+.ai-help-header {
+    background: #0f172a;
+    color: #ffffff;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-help-header small {
+    display: block;
+    color: #cbd5e1;
+    margin-top: 2px;
+}
+
+.ai-help-header button {
+    background: transparent;
+    color: #ffffff;
+    border: 0;
+    font-size: 24px;
+    cursor: pointer;
+}
+
+.ai-help-body {
+    height: 320px;
+    overflow-y: auto;
+    padding: 14px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ai-message {
+    padding: 10px 12px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    max-width: 88%;
+}
+
+.ai-message.bot {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #e5e7eb;
+    align-self: flex-start;
+}
+
+.ai-message.user {
+    background: #15803d;
+    color: #ffffff;
+    align-self: flex-end;
+}
+
+.ai-help-samples {
+    display: flex;
+    gap: 6px;
+    padding: 10px;
+    overflow-x: auto;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+}
+
+.ai-help-samples button {
+    white-space: nowrap;
+    border: 1px solid #bbf7d0;
+    background: #ecfdf5;
+    color: #166534;
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.ai-help-input {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.ai-help-input input {
+    flex: 1;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.ai-help-input button {
+    border: 0;
+    background: #15803d;
+    color: #ffffff;
+    font-weight: 900;
+    border-radius: 12px;
+    padding: 10px 14px;
+}
 .chart-subtitle {
     margin-top: 4px;
     color: #64748b;
