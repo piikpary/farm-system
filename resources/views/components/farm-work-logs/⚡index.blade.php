@@ -4,9 +4,13 @@ use Livewire\Component;
 use App\Models\FarmWorkLog;
 use App\Models\Tractor;
 use App\Models\Driver;
+use App\Models\ZoneBlock;
 use App\Models\Zone;
 use App\Models\TaskCategory;
+use App\Models\FuelStock;
+use App\Models\FuelTransaction;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component
 {
@@ -27,6 +31,7 @@ new class extends Component
         'tractor_id' => '',
         'driver_id' => '',
         'zone_id' => '',
+        'zone_block_id' => '',
         'task_category_id' => '',
         'working_duration' => '',
         'working_area' => '',
@@ -52,6 +57,7 @@ new class extends Component
             'tractor_id' => '',
             'driver_id' => '',
             'zone_id' => '',
+            'zone_block_id' => '',
             'task_category_id' => '',
             'working_duration' => '',
             'working_area' => '',
@@ -75,7 +81,24 @@ new class extends Component
         $this->rows = array_values($this->rows);
     }
 
-    private function calculateRow($row)
+    public function updatedRows($value, $key)
+    {
+        if (str_ends_with($key, '.zone_id')) {
+            $parts = explode('.', $key);
+            $index = $parts[0] ?? null;
+
+            if ($index !== null && isset($this->rows[$index])) {
+                $this->rows[$index]['zone_block_id'] = '';
+            }
+        }
+    }
+
+    public function updatedEditRowZoneId()
+    {
+        $this->editRow['zone_block_id'] = '';
+    }
+
+    public function calculateRow($row)
     {
         $workingDuration = (float) ($row['working_duration'] ?: 0);
         $workingArea = (float) ($row['working_area'] ?: 0);
@@ -96,6 +119,92 @@ new class extends Component
         ];
     }
 
+    private function getActiveFuelStock()
+    {
+        return FuelStock::where('status', 'active')
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function deductFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
+    {
+        $amount = (float) $amount;
+
+        if ($amount <= 0) {
+            return;
+        }
+
+        $fuelStock = $this->getActiveFuelStock();
+
+        if (!$fuelStock) {
+            throw new \Exception('No active fuel stock found. Please create fuel stock first.');
+        }
+
+        if ((float) $fuelStock->current_stock < $amount) {
+            throw new \Exception('Not enough fuel stock. Current stock: ' . number_format((float) $fuelStock->current_stock, 2) . ' L');
+        }
+
+        $newBalance = (float) $fuelStock->current_stock - $amount;
+
+        $fuelStock->update([
+            'current_stock' => $newBalance,
+            'total_stock_out' => (float) $fuelStock->total_stock_out + $amount,
+            'updated_by' => Auth::id(),
+        ]);
+
+        FuelTransaction::create([
+            'fuel_stock_id' => $fuelStock->id,
+            'tractor_id' => $tractorId,
+            'farm_work_log_id' => $workLogId,
+            'type' => 'refill_to_tractor',
+            'quantity' => $amount,
+            'balance_after' => $newBalance,
+            'reference_no' => 'WORKLOG-' . $workLogId,
+            'transaction_date' => $date ?: now()->toDateString(),
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+            'note' => 'Fuel deducted from work log #' . $workLogId,
+        ]);
+    }
+
+    private function returnFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
+    {
+        $amount = (float) $amount;
+
+        if ($amount <= 0) {
+            return;
+        }
+
+        $fuelStock = $this->getActiveFuelStock();
+
+        if (!$fuelStock) {
+            throw new \Exception('No active fuel stock found. Please create fuel stock first.');
+        }
+
+        $newBalance = (float) $fuelStock->current_stock + $amount;
+
+        $fuelStock->update([
+            'current_stock' => $newBalance,
+            'total_stock_out' => max(((float) $fuelStock->total_stock_out - $amount), 0),
+            'updated_by' => Auth::id(),
+        ]);
+
+        FuelTransaction::create([
+            'fuel_stock_id' => $fuelStock->id,
+            'tractor_id' => $tractorId,
+            'farm_work_log_id' => $workLogId,
+            'type' => 'adjustment',
+            'quantity' => $amount,
+            'balance_after' => $newBalance,
+            'reference_no' => 'RETURN-WORKLOG-' . $workLogId . '-' . now()->format('YmdHis'),
+            'transaction_date' => $date ?: now()->toDateString(),
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+            'note' => 'Fuel returned from work log #' . $workLogId,
+        ]);
+    }
+
     public function saveRow($index)
     {
         if (!auth()->user()->hasPermission('work_logs.create')) {
@@ -112,6 +221,7 @@ new class extends Component
             "rows.$index.tractor_id" => 'required|exists:tractors,id',
             "rows.$index.driver_id" => 'required|exists:drivers,id',
             "rows.$index.zone_id" => 'required|exists:zones,id',
+            "rows.$index.zone_block_id" => 'nullable|exists:zone_blocks,id',
             "rows.$index.task_category_id" => 'required|exists:task_categories,id',
             "rows.$index.working_duration" => 'nullable|numeric|min:0',
             "rows.$index.working_area" => 'nullable|numeric|min:0',
@@ -127,33 +237,47 @@ new class extends Component
         $row = $this->rows[$index];
         $calculated = $this->calculateRow($row);
 
-        FarmWorkLog::create([
-            'work_date' => $row['work_date'],
-            'work_status' => $row['work_status'],
-            'tractor_id' => $row['tractor_id'],
-            'driver_id' => $row['driver_id'],
-            'zone_id' => $row['zone_id'],
-            'task_category_id' => $row['task_category_id'],
-            'working_duration' => $row['working_duration'] ?: 0,
-            'working_area' => $row['working_area'] ?: 0,
-            'diesel_start' => $row['diesel_start'] ?: 0,
-            'diesel_refill' => $row['diesel_refill'] ?: 0,
-            'diesel_end' => $row['diesel_end'] ?: 0,
-            'diesel_consumed' => $calculated['diesel_consumed'],
-            'diesel_per_hectare' => $calculated['diesel_per_hectare'],
-            'hectare_per_hour' => $calculated['hectare_per_hour'],
-            'gps_distance_meters' => $row['gps_distance_meters'] ?: 0,
-            'estimated_plowed_area' => $row['estimated_plowed_area'] ?: 0,
-            'gps_progress_percent' => $row['gps_progress_percent'] ?: 0,
-            'note' => $row['note'] ?: null,
-            'created_by' => Auth::id(),
-            'updated_by' => Auth::id(),
-        ]);
+        try {
+            DB::transaction(function () use ($row, $calculated) {
+                $workLog = FarmWorkLog::create([
+                    'work_date' => $row['work_date'],
+                    'work_status' => $row['work_status'],
+                    'tractor_id' => $row['tractor_id'],
+                    'driver_id' => $row['driver_id'],
+                    'zone_id' => $row['zone_id'],
+                    'zone_block_id' => $row['zone_block_id'] ?: null,
+                    'task_category_id' => $row['task_category_id'],
+                    'working_duration' => $row['working_duration'] ?: 0,
+                    'working_area' => $row['working_area'] ?: 0,
+                    'diesel_start' => $row['diesel_start'] ?: 0,
+                    'diesel_refill' => $row['diesel_refill'] ?: 0,
+                    'diesel_end' => $row['diesel_end'] ?: 0,
+                    'diesel_consumed' => $calculated['diesel_consumed'],
+                    'diesel_per_hectare' => $calculated['diesel_per_hectare'],
+                    'hectare_per_hour' => $calculated['hectare_per_hour'],
+                    'gps_distance_meters' => $row['gps_distance_meters'] ?: 0,
+                    'estimated_plowed_area' => $row['estimated_plowed_area'] ?: 0,
+                    'gps_progress_percent' => $row['gps_progress_percent'] ?: 0,
+                    'note' => $row['note'] ?: null,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
+                ]);
 
-        unset($this->rows[$index]);
-        $this->rows = array_values($this->rows);
+                $this->deductFuelStock(
+                    $calculated['diesel_consumed'],
+                    $row['tractor_id'],
+                    $workLog->id,
+                    $row['work_date']
+                );
+            });
 
-        session()->flash('success', 'Work log saved successfully.');
+            unset($this->rows[$index]);
+            $this->rows = array_values($this->rows);
+
+            session()->flash('success', 'Work log saved successfully, fuel stock deducted, and history created.');
+        } catch (\Exception $e) {
+            session()->flash('error', $e->getMessage());
+        }
     }
 
     public function edit($id)
@@ -172,6 +296,7 @@ new class extends Component
             'tractor_id' => $log->tractor_id,
             'driver_id' => $log->driver_id,
             'zone_id' => $log->zone_id,
+            'zone_block_id' => $log->zone_block_id,
             'task_category_id' => $log->task_category_id,
             'working_duration' => $log->working_duration,
             'working_area' => $log->working_area,
@@ -195,6 +320,7 @@ new class extends Component
             'tractor_id' => '',
             'driver_id' => '',
             'zone_id' => '',
+            'zone_block_id' => '',
             'task_category_id' => '',
             'working_duration' => '',
             'working_area' => '',
@@ -222,6 +348,7 @@ new class extends Component
             'editRow.tractor_id' => 'required|exists:tractors,id',
             'editRow.driver_id' => 'required|exists:drivers,id',
             'editRow.zone_id' => 'required|exists:zones,id',
+            'editRow.zone_block_id' => 'nullable|exists:zone_blocks,id',
             'editRow.task_category_id' => 'required|exists:task_categories,id',
             'editRow.working_duration' => 'nullable|numeric|min:0',
             'editRow.working_area' => 'nullable|numeric|min:0',
@@ -235,32 +362,61 @@ new class extends Component
         ]);
 
         $calculated = $this->calculateRow($this->editRow);
+        $oldDieselUsed = (float) $log->diesel_consumed;
 
-        $log->update([
-            'work_date' => $this->editRow['work_date'],
-            'work_status' => $this->editRow['work_status'],
-            'tractor_id' => $this->editRow['tractor_id'],
-            'driver_id' => $this->editRow['driver_id'],
-            'zone_id' => $this->editRow['zone_id'],
-            'task_category_id' => $this->editRow['task_category_id'],
-            'working_duration' => $this->editRow['working_duration'] ?: 0,
-            'working_area' => $this->editRow['working_area'] ?: 0,
-            'diesel_start' => $this->editRow['diesel_start'] ?: 0,
-            'diesel_refill' => $this->editRow['diesel_refill'] ?: 0,
-            'diesel_end' => $this->editRow['diesel_end'] ?: 0,
-            'diesel_consumed' => $calculated['diesel_consumed'],
-            'diesel_per_hectare' => $calculated['diesel_per_hectare'],
-            'hectare_per_hour' => $calculated['hectare_per_hour'],
-            'gps_distance_meters' => $this->editRow['gps_distance_meters'] ?: 0,
-            'estimated_plowed_area' => $this->editRow['estimated_plowed_area'] ?: 0,
-            'gps_progress_percent' => $this->editRow['gps_progress_percent'] ?: 0,
-            'note' => $this->editRow['note'] ?: null,
-            'updated_by' => Auth::id(),
-        ]);
+        try {
+            DB::transaction(function () use ($log, $calculated, $oldDieselUsed) {
+                $newDieselUsed = (float) $calculated['diesel_consumed'];
+                $difference = $newDieselUsed - $oldDieselUsed;
 
-        $this->cancelEdit();
+                if ($difference > 0) {
+                    $this->deductFuelStock(
+                        $difference,
+                        $this->editRow['tractor_id'],
+                        $log->id,
+                        $this->editRow['work_date']
+                    );
+                }
 
-        session()->flash('success', 'Work log updated successfully.');
+                if ($difference < 0) {
+                    $this->returnFuelStock(
+                        abs($difference),
+                        $this->editRow['tractor_id'],
+                        $log->id,
+                        $this->editRow['work_date']
+                    );
+                }
+
+                $log->update([
+                    'work_date' => $this->editRow['work_date'],
+                    'work_status' => $this->editRow['work_status'],
+                    'tractor_id' => $this->editRow['tractor_id'],
+                    'driver_id' => $this->editRow['driver_id'],
+                    'zone_id' => $this->editRow['zone_id'],
+                    'zone_block_id' => $this->editRow['zone_block_id'] ?: null,
+                    'task_category_id' => $this->editRow['task_category_id'],
+                    'working_duration' => $this->editRow['working_duration'] ?: 0,
+                    'working_area' => $this->editRow['working_area'] ?: 0,
+                    'diesel_start' => $this->editRow['diesel_start'] ?: 0,
+                    'diesel_refill' => $this->editRow['diesel_refill'] ?: 0,
+                    'diesel_end' => $this->editRow['diesel_end'] ?: 0,
+                    'diesel_consumed' => $newDieselUsed,
+                    'diesel_per_hectare' => $calculated['diesel_per_hectare'],
+                    'hectare_per_hour' => $calculated['hectare_per_hour'],
+                    'gps_distance_meters' => $this->editRow['gps_distance_meters'] ?: 0,
+                    'estimated_plowed_area' => $this->editRow['estimated_plowed_area'] ?: 0,
+                    'gps_progress_percent' => $this->editRow['gps_progress_percent'] ?: 0,
+                    'note' => $this->editRow['note'] ?: null,
+                    'updated_by' => Auth::id(),
+                ]);
+            });
+
+            $this->cancelEdit();
+
+            session()->flash('success', 'Work log updated, fuel stock adjusted, and history created.');
+        } catch (\Exception $e) {
+            session()->flash('error', $e->getMessage());
+        }
     }
 
     public function delete($id)
@@ -269,9 +425,24 @@ new class extends Component
             abort(403, 'Permission denied.');
         }
 
-        FarmWorkLog::findOrFail($id)->delete();
+        try {
+            DB::transaction(function () use ($id) {
+                $log = FarmWorkLog::findOrFail($id);
 
-        session()->flash('success', 'Work log deleted successfully.');
+                $this->returnFuelStock(
+                    (float) $log->diesel_consumed,
+                    $log->tractor_id,
+                    $log->id,
+                    $log->work_date
+                );
+
+                $log->delete();
+            });
+
+            session()->flash('success', 'Work log deleted, fuel returned, and history created.');
+        } catch (\Exception $e) {
+            session()->flash('error', $e->getMessage());
+        }
     }
 
     public function resetFilter()
@@ -287,12 +458,13 @@ new class extends Component
 
     public function getLogsProperty()
     {
-        return FarmWorkLog::with(['tractor', 'driver', 'zone', 'taskCategory'])
+        return FarmWorkLog::with(['tractor', 'driver', 'zone', 'zoneBlock', 'taskCategory'])
             ->when($this->search, function ($q) {
                 $q->where(function ($query) {
                     $query->whereHas('tractor', fn ($t) => $t->where('tractor_no', 'like', '%' . $this->search . '%')->orWhere('name', 'like', '%' . $this->search . '%'))
                         ->orWhereHas('driver', fn ($d) => $d->where('name', 'like', '%' . $this->search . '%'))
                         ->orWhereHas('zone', fn ($z) => $z->where('zone_code', 'like', '%' . $this->search . '%')->orWhere('name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('zoneBlock', fn ($b) => $b->where('block_code', 'like', '%' . $this->search . '%')->orWhere('name', 'like', '%' . $this->search . '%'))
                         ->orWhereHas('taskCategory', fn ($tc) => $tc->where('name', 'like', '%' . $this->search . '%'))
                         ->orWhere('work_status', 'like', '%' . $this->search . '%');
                 });
@@ -354,6 +526,10 @@ new class extends Component
             'tractors' => Tractor::where('status', 'active')->orderBy('tractor_no')->get(),
             'drivers' => Driver::where('status', 'active')->orderBy('name')->get(),
             'zones' => Zone::where('status', 'active')->orderBy('zone_code')->get(),
+            'zoneBlocks' => ZoneBlock::with('zone')
+                ->where('status', 'active')
+                ->orderBy('block_code')
+                ->get(),
             'taskCategories' => TaskCategory::where('status', 'active')->orderBy('name')->get(),
         ];
     }
@@ -366,159 +542,29 @@ new class extends Component
     @include('components.toast-alert')
 
     <style>
-        .filter-panel {
-            margin-bottom: 18px;
-        }
-
-        .filter-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 14px;
-        }
-
-        .filter-grid label {
-            display: block;
-            font-weight: 900;
-            font-size: 13px;
-            margin-bottom: 6px;
-            color: #334155;
-        }
-
-        .filter-grid input,
-        .filter-grid select {
-            width: 100%;
-            height: 46px;
-            border: 1px solid #d1d5db;
-            border-radius: 12px;
-            padding: 10px 12px;
-            font-weight: 700;
-            background: #ffffff;
-        }
-
-        .table-wrap {
-            overflow-x: auto;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-        }
-
-        .work-table {
-            width: 100%;
-            min-width: 1950px;
-            border-collapse: collapse;
-            background: #ffffff;
-        }
-
-        .work-table th {
-            background: #f8fafc;
-            color: #0f172a;
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-            padding: 12px 10px;
-            border-bottom: 1px solid #e5e7eb;
-            white-space: nowrap;
-        }
-
-        .work-table td {
-            padding: 10px;
-            border-bottom: 1px solid #eef2f7;
-            vertical-align: middle;
-            white-space: nowrap;
-        }
-
-        .work-table input,
-        .work-table select {
-            width: 100%;
-            min-width: 120px;
-            height: 42px;
-            padding: 8px 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            font-size: 13px;
-            background: #ffffff;
-            font-weight: 700;
-        }
-
-        .row-no {
-            width: 45px;
-            min-width: 45px;
-            text-align: center;
-            font-weight: 900;
-            color: #64748b;
-        }
-
-        .new-row {
-            background: #f0fdf4;
-        }
-
-        .new-row td {
-            border-bottom: 1px solid #bbf7d0;
-        }
-
-        .table-actions {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .total-row {
-            background: #f8fafc;
-            font-weight: 900;
-            border-top: 2px solid #d1d5db;
-        }
-
-        .total-row td {
-            border-bottom: 0;
-            padding: 14px 10px;
-            color: #0f172a;
-        }
-
-        .plus-cell {
-            width: 34px;
-            height: 34px;
-            border: none;
-            border-radius: 10px;
-            background: #16a34a;
-            color: #ffffff;
-            font-size: 20px;
-            font-weight: 900;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .plus-cell:hover {
-            background: #15803d;
-        }
-
-        .danger-plus {
-            background: #dc2626;
-        }
-
-        .danger-plus:hover {
-            background: #b91c1c;
-        }
-
-        .error {
-            display: block;
-            color: #dc2626;
-            font-size: 12px;
-            margin-top: 4px;
-            font-weight: 700;
-        }
-
-        .status-text {
-            font-weight: 900;
-            text-transform: capitalize;
-        }
-
-        @media (max-width: 900px) {
-            .filter-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        .filter-panel { margin-bottom:18px; }
+        .filter-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; }
+        .filter-grid label { display:block; font-weight:900; font-size:13px; margin-bottom:6px; color:#334155; }
+        .filter-grid input, .filter-grid select { width:100%; height:46px; border:1px solid #d1d5db; border-radius:12px; padding:10px 12px; font-weight:700; background:#ffffff; }
+        .table-wrap { overflow-x:auto; border:1px solid #e5e7eb; border-radius:16px; }
+        .work-table { width:100%; min-width:2100px; border-collapse:collapse; background:#ffffff; }
+        .work-table th { background:#f8fafc; color:#0f172a; font-size:12px; font-weight:900; text-transform:uppercase; padding:12px 10px; border-bottom:1px solid #e5e7eb; white-space:nowrap; }
+        .work-table td { padding:10px; border-bottom:1px solid #eef2f7; vertical-align:middle; white-space:nowrap; }
+        .work-table input, .work-table select { width:100%; min-width:120px; height:42px; padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; font-size:13px; background:#ffffff; font-weight:700; }
+        .row-no { width:45px; min-width:45px; text-align:center; font-weight:900; color:#64748b; }
+        .new-row { background:#f0fdf4; }
+        .new-row td { border-bottom:1px solid #bbf7d0; }
+        .table-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .total-row { background:#f8fafc; font-weight:900; border-top:2px solid #d1d5db; }
+        .total-row td { border-bottom:0; padding:14px 10px; color:#0f172a; }
+        .plus-cell { width:34px; height:34px; border:none; border-radius:10px; background:#16a34a; color:#ffffff; font-size:20px; font-weight:900; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+        .plus-cell:hover { background:#15803d; }
+        .danger-plus { background:#dc2626; }
+        .danger-plus:hover { background:#b91c1c; }
+        .error { display:block; color:#dc2626; font-size:12px; margin-top:4px; font-weight:700; }
+        .status-text { font-weight:900; text-transform:capitalize; }
+        .sub-zone-text { font-weight:900; color:#15803d; }
+        @media (max-width:900px) { .filter-grid { grid-template-columns:1fr; } }
     </style>
 
     <div class="page-header">
@@ -528,11 +574,6 @@ new class extends Component
         </div>
 
         <div class="page-actions">
-            {{-- <div class="language-switcher">
-                <a href="{{ route('language.switch', 'en') }}" class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">EN</a>
-                <a href="{{ route('language.switch', 'km') }}" class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">ខ្មែរ</a>
-            </div> --}}
-
             <a href="{{ route('farm-work-logs.export.csv') }}" class="btn gray">Export CSV</a>
             <a href="{{ route('farm-work-logs.export.excel') }}" class="btn gray">Export Excel</a>
             <a href="{{ route('dashboard') }}" class="btn gray">Dashboard</a>
@@ -545,7 +586,7 @@ new class extends Component
         <div class="filter-grid">
             <div>
                 <label>Search</label>
-                <input type="text" wire:model.live="search" placeholder="Search tractor, driver, zone, task">
+                <input type="text" wire:model.live="search" placeholder="Search tractor, driver, zone, sub zone, task">
             </div>
 
             <div>
@@ -563,7 +604,9 @@ new class extends Component
                 <select wire:model.live="tractorId">
                     <option value="">All Tractors</option>
                     @foreach($tractors as $tractor)
-                        <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }} {{ $tractor->name ? '- ' . $tractor->name : '' }}</option>
+                        <option value="{{ $tractor->id }}">
+                            {{ $tractor->tractor_no }} {{ $tractor->name ? '- ' . $tractor->name : '' }}
+                        </option>
                     @endforeach
                 </select>
             </div>
@@ -583,7 +626,9 @@ new class extends Component
                 <select wire:model.live="zoneId">
                     <option value="">All Zones</option>
                     @foreach($zones as $zone)
-                        <option value="{{ $zone->id }}">{{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}</option>
+                        <option value="{{ $zone->id }}">
+                            {{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}
+                        </option>
                     @endforeach
                 </select>
             </div>
@@ -599,7 +644,7 @@ new class extends Component
             </div>
         </div>
 
-        <div style="margin-top: 14px;">
+        <div style="margin-top:14px;">
             <button type="button" wire:click="resetFilter" class="btn gray">Reset Filter</button>
         </div>
     </div>
@@ -617,6 +662,7 @@ new class extends Component
                         <th>Tractor</th>
                         <th>Driver</th>
                         <th>Zone</th>
+                        <th>Sub Zone</th>
                         <th>Task</th>
                         <th>Hour</th>
                         <th>Area</th>
@@ -673,7 +719,20 @@ new class extends Component
                                     <select wire:model.live="editRow.zone_id">
                                         <option value="">Select Zone</option>
                                         @foreach($zones as $zone)
-                                            <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                                            <option value="{{ $zone->id }}">
+                                                {{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.zone_block_id">
+                                        <option value="">Select Sub Zone</option>
+                                        @foreach($zoneBlocks->where('zone_id', (int) $editRow['zone_id']) as $block)
+                                            <option value="{{ $block->id }}">
+                                                {{ $block->block_code }} {{ $block->name ? '- ' . $block->name : '' }}
+                                            </option>
                                         @endforeach
                                     </select>
                                 </td>
@@ -718,6 +777,16 @@ new class extends Component
                                 <td>{{ $log->tractor->tractor_no ?? '-' }}</td>
                                 <td>{{ $log->driver->name ?? '-' }}</td>
                                 <td>{{ $log->zone->zone_code ?? '-' }}</td>
+                                <td>
+                                    @if($log->zoneBlock)
+                                        <span class="sub-zone-text">
+                                            {{ $log->zoneBlock->block_code }}
+                                            {{ $log->zoneBlock->name ? '- ' . $log->zoneBlock->name : '' }}
+                                        </span>
+                                    @else
+                                        -
+                                    @endif
+                                </td>
                                 <td>{{ $log->taskCategory->name ?? '-' }}</td>
                                 <td>{{ number_format((float) $log->working_duration, 2) }}</td>
                                 <td>{{ number_format((float) $log->working_area, 2) }}</td>
@@ -738,7 +807,12 @@ new class extends Component
                                         @endif
 
                                         @if(auth()->user()->hasPermission('work_logs.delete'))
-                                            <button type="button" wire:click="delete({{ $log->id }})" class="mini danger" onclick="return confirm('Delete this work log?')">Delete</button>
+                                            <button type="button"
+                                                    wire:click="delete({{ $log->id }})"
+                                                    class="mini danger"
+                                                    onclick="return confirm('Delete this work log?')">
+                                                Delete
+                                            </button>
                                         @endif
                                     </div>
                                 </td>
@@ -747,7 +821,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="19" class="empty">No work log found.</td>
+                                <td colspan="20" class="empty">No work log found.</td>
                             </tr>
                         @endif
                     @endforelse
@@ -792,7 +866,20 @@ new class extends Component
                                 <select wire:model.live="rows.{{ $index }}.zone_id">
                                     <option value="">Select Zone</option>
                                     @foreach($zones as $zone)
-                                        <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                                        <option value="{{ $zone->id }}">
+                                            {{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.zone_block_id">
+                                    <option value="">Select Sub Zone</option>
+                                    @foreach($zoneBlocks->where('zone_id', (int) $row['zone_id']) as $block)
+                                        <option value="{{ $block->id }}">
+                                            {{ $block->block_code }} {{ $block->name ? '- ' . $block->name : '' }}
+                                        </option>
                                     @endforeach
                                 </select>
                             </td>
@@ -842,7 +929,7 @@ new class extends Component
                             @endif
                         </td>
 
-                        <td colspan="6" style="text-align:right;">Total</td>
+                        <td colspan="7" style="text-align:right;">Total</td>
                         <td>{{ number_format((float) $this->totalHours, 2) }}</td>
                         <td>{{ number_format((float) $this->totalArea, 2) }}</td>
                         <td>-</td>

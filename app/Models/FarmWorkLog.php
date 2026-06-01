@@ -16,7 +16,7 @@ class FarmWorkLog extends Model
     'driver_id',
     'zone_id',
     'task_category_id',
-
+    'zone_block_id',
     'working_duration',
     'working_area',
 
@@ -92,10 +92,7 @@ protected $casts = [
     {
         return $this->hasMany(DriverWorkAction::class);
     }
-    public function zoneBlock()
-{
-    return $this->belongsTo(\App\Models\ZoneBlock::class);
-}
+    
     protected static function booted()
 {
     static::creating(function ($log) {
@@ -108,5 +105,8 @@ protected $casts = [
         }
     });
 }
-    
+    public function zoneBlock()
+{
+    return $this->belongsTo(ZoneBlock::class, 'zone_block_id');
+}
 }

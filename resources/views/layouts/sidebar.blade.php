@@ -200,15 +200,7 @@
                         </a>
                     @endif
 
-                    @if($user->hasPermission('work_logs.create'))
-                        <a href="{{ route('farm-work-logs.create') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.create') ? 'active' : '' }}"
-                           title="{{ __('sidebar.add_work_log') }}">
-                            <span class="farm-menu-icon">➕</span>
-                            <span>{{ __('sidebar.add_work_log') }}</span>
-                        </a>
-                    @endif
-
+                    
                     @if($showBlockRegisters && $user->hasPermission('block_registers.view'))
                         <a href="{{ route('block-registers.index') }}"
                            class="farm-menu-link {{ request()->routeIs('block-registers.*') ? 'active' : '' }}"
