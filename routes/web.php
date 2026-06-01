@@ -323,5 +323,14 @@ Route::livewire('/block-registers/{register}/edit', 'block-registers.edit')
     ->middleware('permission:block_registers.edit')
     ->name('block-registers.edit');
 });
+Route::get('/lang/{locale}', function ($locale) {
+    if (! in_array($locale, ['en', 'km'])) {
+        abort(404);
+    }
+
+    session(['locale' => $locale]);
+
+    return redirect()->back();
+})->name('lang.switch');
 
 require __DIR__.'/auth.php';

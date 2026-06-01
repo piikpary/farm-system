@@ -21,38 +21,40 @@
     $showUsers = $sidebarSettings['users'] ?? false;
     $showRoles = $sidebarSettings['roles'] ?? false;
 
-    $hasMain = auth()->user()->hasPermission('dashboard.view');
+    $user = auth()->user();
 
-    $hasFarmOperation = (
-        auth()->user()->hasPermission('stock_fuel.view') ||
-        auth()->user()->hasPermission('work_logs.view') ||
-        auth()->user()->hasPermission('work_logs.create') ||
-        ($showBlockRegisters && auth()->user()->hasPermission('block_registers.view'))
+    $hasMain = $user && $user->hasPermission('dashboard.view');
+
+    $hasFarmOperation = $user && (
+        $user->hasPermission('stock_fuel.view') ||
+        $user->hasPermission('work_logs.view') ||
+        $user->hasPermission('work_logs.create') ||
+        ($showBlockRegisters && $user->hasPermission('block_registers.view'))
     );
 
-    $hasReports = (
-        ($showTaskCategorySummaryReport && auth()->user()->hasPermission('reports.task_category_summary')) ||
-        ($showFuelReport && auth()->user()->hasPermission('reports.fuel')) ||
-        ($showTractorReport && auth()->user()->hasPermission('reports.tractors')) ||
-        ($showDriverReport && auth()->user()->hasPermission('reports.drivers')) ||
-        ($showZoneReport && auth()->user()->hasPermission('reports.zones'))
+    $hasReports = $user && (
+        ($showTaskCategorySummaryReport && $user->hasPermission('reports.task_category_summary')) ||
+        ($showFuelReport && $user->hasPermission('reports.fuel')) ||
+        ($showTractorReport && $user->hasPermission('reports.tractors')) ||
+        ($showDriverReport && $user->hasPermission('reports.drivers')) ||
+        ($showZoneReport && $user->hasPermission('reports.zones'))
     );
 
-    $hasSettings = (
-        auth()->user()->hasPermission('sidebar_settings.view') ||
-        auth()->user()->hasPermission('tractor_field_settings.view') ||
-        ($showAiSettings && auth()->user()->hasPermission('ai_settings.view')) ||
-        ($showUsers && auth()->user()->hasPermission('users.view')) ||
-        ($showRoles && auth()->user()->hasPermission('roles.view'))
+    $hasSettings = $user && (
+        $user->hasPermission('sidebar_settings.view') ||
+        $user->hasPermission('tractor_field_settings.view') ||
+        ($showAiSettings && $user->hasPermission('ai_settings.view')) ||
+        ($showUsers && $user->hasPermission('users.view')) ||
+        ($showRoles && $user->hasPermission('roles.view'))
     );
 
-    $hasMasterData = (
-        ($showTractors && auth()->user()->hasPermission('tractors.view')) ||
-        ($showDrivers && auth()->user()->hasPermission('drivers.view')) ||
-        ($showZones && auth()->user()->hasPermission('zones.view')) ||
-        ($showZoneBlocks && auth()->user()->hasPermission('zone_blocks.view')) ||
-        ($showTaskCategories && auth()->user()->hasPermission('task_categories.view')) ||
-        ($showPlantingCycleTypes && auth()->user()->hasPermission('planting_cycle_types.view'))
+    $hasMasterData = $user && (
+        ($showTractors && $user->hasPermission('tractors.view')) ||
+        ($showDrivers && $user->hasPermission('drivers.view')) ||
+        ($showZones && $user->hasPermission('zones.view')) ||
+        ($showZoneBlocks && $user->hasPermission('zone_blocks.view')) ||
+        ($showTaskCategories && $user->hasPermission('task_categories.view')) ||
+        ($showPlantingCycleTypes && $user->hasPermission('planting_cycle_types.view'))
     );
 
     $mainActive = request()->routeIs('dashboard');
@@ -106,6 +108,7 @@
         letter-spacing: 1px;
         text-transform: uppercase;
         transition: 0.2s ease;
+        white-space: nowrap;
     }
 
     .farm-dropdown-title:hover {
@@ -142,7 +145,7 @@
     <div class="farm-brand">
         <div class="farm-brand-icon">🌿</div>
 
-        <div>
+        <div class="farm-brand-text">
             <div class="farm-brand-title">{{ __('sidebar.farm_control') }}</div>
             <div class="farm-brand-sub">{{ __('sidebar.smart_farm_operation') }}</div>
         </div>
@@ -160,7 +163,8 @@
 
                 <div class="farm-dropdown-body">
                     <a href="{{ route('dashboard') }}"
-                       class="farm-menu-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
+                       class="farm-menu-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
+                       title="{{ __('sidebar.dashboard') }}">
                         <span class="farm-menu-icon">🏠</span>
                         <span>{{ __('sidebar.dashboard') }}</span>
                     </a>
@@ -178,33 +182,37 @@
                 </summary>
 
                 <div class="farm-dropdown-body">
-                    @if(auth()->user()->hasPermission('stock_fuel.view'))
+                    @if($user->hasPermission('stock_fuel.view'))
                         <a href="{{ route('stock-fuel.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('stock-fuel.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('stock-fuel.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.stock_fuel') }}">
                             <span class="farm-menu-icon">⛽</span>
                             <span>{{ __('sidebar.stock_fuel') }}</span>
                         </a>
                     @endif
 
-                    @if(auth()->user()->hasPermission('work_logs.view'))
+                    @if($user->hasPermission('work_logs.view'))
                         <a href="{{ route('farm-work-logs.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.index') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.index') ? 'active' : '' }}"
+                           title="{{ __('sidebar.work_logs') }}">
                             <span class="farm-menu-icon">📝</span>
                             <span>{{ __('sidebar.work_logs') }}</span>
                         </a>
                     @endif
 
-                    @if(auth()->user()->hasPermission('work_logs.create'))
+                    @if($user->hasPermission('work_logs.create'))
                         <a href="{{ route('farm-work-logs.create') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.create') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.create') ? 'active' : '' }}"
+                           title="{{ __('sidebar.add_work_log') }}">
                             <span class="farm-menu-icon">➕</span>
                             <span>{{ __('sidebar.add_work_log') }}</span>
                         </a>
                     @endif
 
-                    @if($showBlockRegisters && auth()->user()->hasPermission('block_registers.view'))
+                    @if($showBlockRegisters && $user->hasPermission('block_registers.view'))
                         <a href="{{ route('block-registers.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('block-registers.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('block-registers.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.block_registers') }}">
                             <span class="farm-menu-icon">📋</span>
                             <span>{{ __('sidebar.block_registers') }}</span>
                         </a>
@@ -223,41 +231,46 @@
                 </summary>
 
                 <div class="farm-dropdown-body">
-                    @if($showTaskCategorySummaryReport && auth()->user()->hasPermission('reports.task_category_summary'))
+                    @if($showTaskCategorySummaryReport && $user->hasPermission('reports.task_category_summary'))
                         <a href="{{ route('reports.task-category-summary') }}"
-                           class="farm-menu-link {{ request()->routeIs('reports.task-category-summary') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('reports.task-category-summary') ? 'active' : '' }}"
+                           title="{{ __('sidebar.task_category_summary_report') }}">
                             <span class="farm-menu-icon">📊</span>
                             <span>{{ __('sidebar.task_category_summary_report') }}</span>
                         </a>
                     @endif
 
-                    @if($showFuelReport && auth()->user()->hasPermission('reports.fuel'))
+                    @if($showFuelReport && $user->hasPermission('reports.fuel'))
                         <a href="{{ route('reports.fuel') }}"
-                           class="farm-menu-link {{ request()->routeIs('reports.fuel') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('reports.fuel') ? 'active' : '' }}"
+                           title="{{ __('sidebar.fuel_report') }}">
                             <span class="farm-menu-icon">⛽</span>
                             <span>{{ __('sidebar.fuel_report') }}</span>
                         </a>
                     @endif
 
-                    @if($showTractorReport && auth()->user()->hasPermission('reports.tractors'))
+                    @if($showTractorReport && $user->hasPermission('reports.tractors'))
                         <a href="{{ route('reports.tractors') }}"
-                           class="farm-menu-link {{ request()->routeIs('reports.tractors') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('reports.tractors') ? 'active' : '' }}"
+                           title="{{ __('sidebar.tractor_report') }}">
                             <span class="farm-menu-icon">🚜</span>
                             <span>{{ __('sidebar.tractor_report') }}</span>
                         </a>
                     @endif
 
-                    @if($showDriverReport && auth()->user()->hasPermission('reports.drivers'))
+                    @if($showDriverReport && $user->hasPermission('reports.drivers'))
                         <a href="{{ route('reports.drivers') }}"
-                           class="farm-menu-link {{ request()->routeIs('reports.drivers') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('reports.drivers') ? 'active' : '' }}"
+                           title="{{ __('sidebar.driver_report') }}">
                             <span class="farm-menu-icon">👷</span>
                             <span>{{ __('sidebar.driver_report') }}</span>
                         </a>
                     @endif
 
-                    @if($showZoneReport && auth()->user()->hasPermission('reports.zones'))
+                    @if($showZoneReport && $user->hasPermission('reports.zones'))
                         <a href="{{ route('reports.zones') }}"
-                           class="farm-menu-link {{ request()->routeIs('reports.zones') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('reports.zones') ? 'active' : '' }}"
+                           title="{{ __('sidebar.zone_report') }}">
                             <span class="farm-menu-icon">🗺️</span>
                             <span>{{ __('sidebar.zone_report') }}</span>
                         </a>
@@ -276,41 +289,46 @@
                 </summary>
 
                 <div class="farm-dropdown-body">
-                    @if(auth()->user()->hasPermission('sidebar_settings.view'))
+                    @if($user->hasPermission('sidebar_settings.view'))
                         <a href="{{ route('sidebar-settings.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('sidebar-settings.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('sidebar-settings.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.sidebar_settings') }}">
                             <span class="farm-menu-icon">⚙️</span>
                             <span>{{ __('sidebar.sidebar_settings') }}</span>
                         </a>
                     @endif
 
-                    @if(auth()->user()->hasPermission('tractor_field_settings.view'))
+                    @if($user->hasPermission('tractor_field_settings.view'))
                         <a href="{{ route('tractor-field-settings.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('tractor-field-settings.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('tractor-field-settings.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.tractor_field_settings') }}">
                             <span class="farm-menu-icon">🚜</span>
                             <span>{{ __('sidebar.tractor_field_settings') }}</span>
                         </a>
                     @endif
 
-                    @if($showAiSettings && auth()->user()->hasPermission('ai_settings.view'))
+                    @if($showAiSettings && $user->hasPermission('ai_settings.view'))
                         <a href="{{ route('ai-settings.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('ai-settings.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('ai-settings.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.ai_settings') }}">
                             <span class="farm-menu-icon">🤖</span>
                             <span>{{ __('sidebar.ai_settings') }}</span>
                         </a>
                     @endif
 
-                    @if($showUsers && auth()->user()->hasPermission('users.view'))
+                    @if($showUsers && $user->hasPermission('users.view'))
                         <a href="{{ route('users.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('users.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.users') }}">
                             <span class="farm-menu-icon">👥</span>
                             <span>{{ __('sidebar.users') }}</span>
                         </a>
                     @endif
 
-                    @if($showRoles && auth()->user()->hasPermission('roles.view'))
+                    @if($showRoles && $user->hasPermission('roles.view'))
                         <a href="{{ route('roles.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('roles.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('roles.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.roles') }}">
                             <span class="farm-menu-icon">🔐</span>
                             <span>{{ __('sidebar.roles') }}</span>
                         </a>
@@ -329,49 +347,55 @@
                 </summary>
 
                 <div class="farm-dropdown-body">
-                    @if($showTractors && auth()->user()->hasPermission('tractors.view'))
+                    @if($showTractors && $user->hasPermission('tractors.view'))
                         <a href="{{ route('tractors.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('tractors.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('tractors.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.tractors') }}">
                             <span class="farm-menu-icon">🚜</span>
                             <span>{{ __('sidebar.tractors') }}</span>
                         </a>
                     @endif
 
-                    @if($showDrivers && auth()->user()->hasPermission('drivers.view'))
+                    @if($showDrivers && $user->hasPermission('drivers.view'))
                         <a href="{{ route('drivers.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('drivers.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('drivers.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.drivers') }}">
                             <span class="farm-menu-icon">👷</span>
                             <span>{{ __('sidebar.drivers') }}</span>
                         </a>
                     @endif
 
-                    @if($showZones && auth()->user()->hasPermission('zones.view'))
+                    @if($showZones && $user->hasPermission('zones.view'))
                         <a href="{{ route('zones.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('zones.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('zones.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.zones') }}">
                             <span class="farm-menu-icon">📍</span>
                             <span>{{ __('sidebar.zones') }}</span>
                         </a>
                     @endif
 
-                    @if($showZoneBlocks && auth()->user()->hasPermission('zone_blocks.view'))
+                    @if($showZoneBlocks && $user->hasPermission('zone_blocks.view'))
                         <a href="{{ route('zone-blocks.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('zone-blocks.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('zone-blocks.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.zone_blocks') }}">
                             <span class="farm-menu-icon">🧩</span>
                             <span>{{ __('sidebar.zone_blocks') }}</span>
                         </a>
                     @endif
 
-                    @if($showTaskCategories && auth()->user()->hasPermission('task_categories.view'))
+                    @if($showTaskCategories && $user->hasPermission('task_categories.view'))
                         <a href="{{ route('task-categories.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('task-categories.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('task-categories.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.task_categories') }}">
                             <span class="farm-menu-icon">🌾</span>
                             <span>{{ __('sidebar.task_categories') }}</span>
                         </a>
                     @endif
 
-                    @if($showPlantingCycleTypes && auth()->user()->hasPermission('planting_cycle_types.view'))
+                    @if($showPlantingCycleTypes && $user->hasPermission('planting_cycle_types.view'))
                         <a href="{{ route('planting-cycle-types.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('planting-cycle-types.*') ? 'active' : '' }}">
+                           class="farm-menu-link {{ request()->routeIs('planting-cycle-types.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.planting_cycle_types') }}">
                             <span class="farm-menu-icon">🌱</span>
                             <span>{{ __('sidebar.planting_cycle_types') }}</span>
                         </a>

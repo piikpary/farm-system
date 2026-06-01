@@ -23,6 +23,8 @@
             --muted: #6b7280;
             --border: #e5e7eb;
             --shadow: 0 10px 30px rgba(15, 23, 42, .08);
+            --sidebar-width: 270px;
+            --sidebar-collapsed-width: 82px;
         }
 
         * {
@@ -42,27 +44,32 @@
         }
 
         .farm-sidebar {
-            width: 270px;
+            width: var(--sidebar-width);
             background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
             color: white;
             position: fixed;
             inset: 0 auto 0 0;
             overflow-y: auto;
+            overflow-x: hidden;
             z-index: 40;
             border-right: 1px solid rgba(255,255,255,.08);
+            transition: width .25s ease, transform .25s ease;
         }
 
         .farm-brand {
-            padding: 22px 20px;
+            min-height: 82px;
+            padding: 20px;
             display: flex;
             gap: 12px;
             align-items: center;
             border-bottom: 1px solid rgba(255,255,255,.08);
+            transition: .25s ease;
         }
 
         .farm-brand-icon {
             width: 42px;
             height: 42px;
+            min-width: 42px;
             border-radius: 14px;
             background: linear-gradient(135deg, #22c55e, #166534);
             display: grid;
@@ -76,6 +83,7 @@
             font-weight: 900;
             letter-spacing: -.03em;
             line-height: 1.1;
+            white-space: nowrap;
         }
 
         .farm-brand-sub {
@@ -83,12 +91,14 @@
             font-size: 12px;
             margin-top: 4px;
             font-weight: 600;
+            white-space: nowrap;
         }
 
         .farm-main {
-            margin-left: 270px;
-            width: calc(100% - 270px);
+            margin-left: var(--sidebar-width);
+            width: calc(100% - var(--sidebar-width));
             min-height: 100vh;
+            transition: margin-left .25s ease, width .25s ease;
         }
 
         .farm-topbar {
@@ -111,14 +121,27 @@
             gap: 12px;
         }
 
-        .farm-mobile-btn {
-            display: none;
-            border: 1px solid var(--border);
-            background: white;
-            border-radius: 10px;
-            padding: 8px 10px;
+        .farm-sidebar-toggle {
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+            border: 1px solid #dbe4ee;
+            background: #ffffff;
+            color: #166534;
+            border-radius: 12px;
             cursor: pointer;
-            font-size: 18px;
+            font-size: 19px;
+            font-weight: 900;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: .18s ease;
+        }
+
+        .farm-sidebar-toggle:hover {
+            background: #ecfdf5;
+            border-color: #bbf7d0;
+            color: #15803d;
         }
 
         .farm-topbar-title {
@@ -189,23 +212,106 @@
             display: none;
         }
 
+        .farm-layout.sidebar-collapsed .farm-sidebar {
+            width: var(--sidebar-collapsed-width);
+        }
+
+        .farm-layout.sidebar-collapsed .farm-main {
+            margin-left: var(--sidebar-collapsed-width);
+            width: calc(100% - var(--sidebar-collapsed-width));
+        }
+
+        .farm-layout.sidebar-collapsed .farm-brand {
+            justify-content: center;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        .farm-layout.sidebar-collapsed .farm-brand-title,
+        .farm-layout.sidebar-collapsed .farm-brand-sub,
+        .farm-layout.sidebar-collapsed .farm-dropdown-title span:first-child,
+        .farm-layout.sidebar-collapsed .farm-dropdown-arrow,
+        .farm-layout.sidebar-collapsed .farm-menu-link span:last-child {
+            display: none;
+        }
+
+        .farm-layout.sidebar-collapsed .farm-dropdown-title {
+            justify-content: center;
+            margin-left: 8px;
+            margin-right: 8px;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .farm-layout.sidebar-collapsed .farm-dropdown-title::before {
+            content: "•••";
+            color: #64748b;
+            letter-spacing: 2px;
+        }
+
+        .farm-layout.sidebar-collapsed .farm-dropdown-body .farm-menu-link {
+            justify-content: center;
+            margin-left: 8px;
+            margin-right: 8px;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        .farm-layout.sidebar-collapsed .farm-menu-icon {
+            width: 24px;
+            font-size: 17px;
+        }
+
         @media (max-width: 1024px) {
             .farm-sidebar {
+                width: var(--sidebar-width);
                 transform: translateX(-100%);
-                transition: .25s ease;
+            }
+
+            .farm-layout.sidebar-collapsed .farm-sidebar {
+                width: var(--sidebar-width);
             }
 
             .farm-sidebar.open {
                 transform: translateX(0);
             }
 
-            .farm-main {
+            .farm-main,
+            .farm-layout.sidebar-collapsed .farm-main {
                 margin-left: 0;
                 width: 100%;
             }
 
-            .farm-mobile-btn {
-                display: inline-flex;
+            .farm-layout.sidebar-collapsed .farm-brand-title,
+            .farm-layout.sidebar-collapsed .farm-brand-sub,
+            .farm-layout.sidebar-collapsed .farm-dropdown-title span:first-child,
+            .farm-layout.sidebar-collapsed .farm-dropdown-arrow,
+            .farm-layout.sidebar-collapsed .farm-menu-link span:last-child {
+                display: inline;
+            }
+
+            .farm-layout.sidebar-collapsed .farm-brand {
+                justify-content: flex-start;
+                padding: 20px;
+            }
+
+            .farm-layout.sidebar-collapsed .farm-dropdown-title {
+                justify-content: space-between;
+                margin-left: 10px;
+                margin-right: 10px;
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .farm-layout.sidebar-collapsed .farm-dropdown-title::before {
+                content: none;
+            }
+
+            .farm-layout.sidebar-collapsed .farm-dropdown-body .farm-menu-link {
+                justify-content: flex-start;
+                margin-left: 14px;
+                margin-right: 10px;
+                padding-left: 16px;
             }
 
             .sidebar-backdrop {
@@ -236,20 +342,26 @@
                 padding: 8px 10px;
                 font-size: 12px;
             }
+
+            .farm-topbar-sub {
+                display: none;
+            }
         }
     </style>
 </head>
 
 <body>
-    <div class="farm-layout">
+    <div id="farmLayout" class="farm-layout">
         @include('layouts.sidebar')
 
-        <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="toggleSidebar()"></div>
+        <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
 
         <main class="farm-main">
             <header class="farm-topbar">
                 <div class="farm-topbar-left">
-                    <button type="button" class="farm-mobile-btn" onclick="toggleSidebar()">☰</button>
+                    <button type="button" id="sidebarToggleBtn" class="farm-sidebar-toggle" title="Close sidebar">
+                        <span id="sidebarToggleIcon">←</span>
+                    </button>
 
                     <div>
                         <div class="farm-topbar-title">{{ __('pages.farm_control_system') }}</div>
@@ -258,24 +370,36 @@
                 </div>
 
                 <div class="farm-user">
-                    <div class="farm-user-info">
-                        <div class="farm-user-name">{{ auth()->user()->name ?? 'User' }}</div>
-                        <div class="farm-user-role">{{ auth()->user()->role->name ?? __('pages.system_user') }}</div>
-                    </div>
+    <div class="language-switcher topbar-language-switcher">
+        <a href="{{ route('lang.switch', ['locale' => 'en']) }}"
+        class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">
+            EN
+        </a>
 
-                    <div class="farm-user-avatar">
-                        {{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}
-                    </div>
+        <a href="{{ route('lang.switch', ['locale' => 'km']) }}"
+        class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">
+            ខ្មែរ
+        </a>
+    </div>
 
-                    <form method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <button type="submit" class="logout-btn">{{ __('pages.logout') }}</button>
-                    </form>
-                </div>
+    <div class="farm-user-info">
+        <div class="farm-user-name">{{ auth()->user()->name ?? 'User' }}</div>
+        <div class="farm-user-role">{{ auth()->user()->role->name ?? __('pages.system_user') }}</div>
+    </div>
+
+    <div class="farm-user-avatar">
+        {{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}
+    </div>
+
+    <form method="POST" action="{{ route('logout') }}">
+        @csrf
+        <button type="submit" class="logout-btn">{{ __('pages.logout') }}</button>
+    </form>
+</div>
             </header>
 
             <section class="farm-content">
-               @isset($slot)
+                @isset($slot)
                     {{ $slot }}
                 @else
                     @yield('content')
@@ -283,8 +407,9 @@
             </section>
         </main>
     </div>
+
     @php
-    $aiSetting = \App\Models\AiSetting::where('status', 'active')->first();
+        $aiSetting = \App\Models\AiSetting::where('status', 'active')->first();
     @endphp
 
     @if(auth()->check() && $aiSetting && $aiSetting->is_enabled && $aiSetting->api_key)
@@ -294,13 +419,95 @@
     @livewireScripts
 
     <script>
-        function toggleSidebar() {
+        document.addEventListener('DOMContentLoaded', function () {
+            const layout = document.getElementById('farmLayout');
             const sidebar = document.getElementById('farmSidebar');
             const backdrop = document.getElementById('sidebarBackdrop');
+            const toggleBtn = document.getElementById('sidebarToggleBtn');
+            const toggleIcon = document.getElementById('sidebarToggleIcon');
 
-            sidebar.classList.toggle('open');
-            backdrop.classList.toggle('show');
-        }
+            function isMobile() {
+                return window.innerWidth <= 1024;
+            }
+
+            function updateIcon() {
+                if (isMobile()) {
+                    if (sidebar.classList.contains('open')) {
+                        toggleIcon.innerText = '✕';
+                        toggleBtn.title = 'Close sidebar';
+                    } else {
+                        toggleIcon.innerText = '☰';
+                        toggleBtn.title = 'Open sidebar';
+                    }
+                    return;
+                }
+
+                if (layout.classList.contains('sidebar-collapsed')) {
+                    toggleIcon.innerText = '☰';
+                    toggleBtn.title = 'Open sidebar';
+                } else {
+                    toggleIcon.innerText = '←';
+                    toggleBtn.title = 'Close sidebar';
+                }
+            }
+
+            function closeMobileSidebar() {
+                sidebar.classList.remove('open');
+                backdrop.classList.remove('show');
+                updateIcon();
+            }
+
+            const savedSidebarState = localStorage.getItem('farm_sidebar_state');
+
+            if (!isMobile() && savedSidebarState === 'collapsed') {
+                layout.classList.add('sidebar-collapsed');
+            }
+
+            updateIcon();
+
+            toggleBtn.addEventListener('click', function () {
+                if (isMobile()) {
+                    sidebar.classList.toggle('open');
+                    backdrop.classList.toggle('show');
+                    updateIcon();
+                    return;
+                }
+
+                layout.classList.toggle('sidebar-collapsed');
+
+                if (layout.classList.contains('sidebar-collapsed')) {
+                    localStorage.setItem('farm_sidebar_state', 'collapsed');
+                } else {
+                    localStorage.setItem('farm_sidebar_state', 'expanded');
+                }
+
+                updateIcon();
+            });
+
+            backdrop.addEventListener('click', closeMobileSidebar);
+
+            window.addEventListener('resize', function () {
+                if (isMobile()) {
+                    layout.classList.remove('sidebar-collapsed');
+                    closeMobileSidebar();
+                } else {
+                    sidebar.classList.remove('open');
+                    backdrop.classList.remove('show');
+
+                    const state = localStorage.getItem('farm_sidebar_state');
+
+                    if (state === 'collapsed') {
+                        layout.classList.add('sidebar-collapsed');
+                    } else {
+                        layout.classList.remove('sidebar-collapsed');
+                    }
+
+                    updateIcon();
+                }
+            });
+        });
     </script>
+
+    @stack('scripts')
 </body>
 </html>

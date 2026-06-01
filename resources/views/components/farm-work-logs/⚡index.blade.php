@@ -6,17 +6,262 @@ use App\Models\Tractor;
 use App\Models\Driver;
 use App\Models\Zone;
 use App\Models\TaskCategory;
-use App\Models\SidebarMenuSetting;
+use Illuminate\Support\Facades\Auth;
 
 new class extends Component
 {
     public $search = '';
-    public $date_from;
-    public $date_to;
-    public $tractor_id = '';
-    public $driver_id = '';
-    public $zone_id = '';
-    public $task_category_id = '';
+    public $dateFrom = '';
+    public $dateTo = '';
+    public $tractorId = '';
+    public $driverId = '';
+    public $zoneId = '';
+    public $taskCategoryId = '';
+
+    public $rows = [];
+    public $editingId = null;
+
+    public $editRow = [
+        'work_date' => '',
+        'work_status' => 'pending',
+        'tractor_id' => '',
+        'driver_id' => '',
+        'zone_id' => '',
+        'task_category_id' => '',
+        'working_duration' => '',
+        'working_area' => '',
+        'diesel_start' => '',
+        'diesel_refill' => '',
+        'diesel_end' => '',
+        'gps_distance_meters' => '',
+        'estimated_plowed_area' => '',
+        'gps_progress_percent' => '',
+        'note' => '',
+    ];
+
+    public function addRow()
+    {
+        $this->rows[] = $this->emptyRow();
+    }
+
+    public function emptyRow()
+    {
+        return [
+            'work_date' => now()->format('Y-m-d'),
+            'work_status' => 'pending',
+            'tractor_id' => '',
+            'driver_id' => '',
+            'zone_id' => '',
+            'task_category_id' => '',
+            'working_duration' => '',
+            'working_area' => '',
+            'diesel_start' => '',
+            'diesel_refill' => '',
+            'diesel_end' => '',
+            'gps_distance_meters' => 0,
+            'estimated_plowed_area' => 0,
+            'gps_progress_percent' => 0,
+            'note' => '',
+        ];
+    }
+
+    public function removeRow($index)
+    {
+        if (!isset($this->rows[$index])) {
+            return;
+        }
+
+        unset($this->rows[$index]);
+        $this->rows = array_values($this->rows);
+    }
+
+    private function calculateRow($row)
+    {
+        $workingDuration = (float) ($row['working_duration'] ?: 0);
+        $workingArea = (float) ($row['working_area'] ?: 0);
+        $dieselStart = (float) ($row['diesel_start'] ?: 0);
+        $dieselRefill = (float) ($row['diesel_refill'] ?: 0);
+        $dieselEnd = (float) ($row['diesel_end'] ?: 0);
+
+        $dieselUsed = ($dieselStart + $dieselRefill) - $dieselEnd;
+        $dieselUsed = max($dieselUsed, 0);
+
+        $literPerHa = $workingArea > 0 ? $dieselUsed / $workingArea : 0;
+        $haPerHr = $workingDuration > 0 ? $workingArea / $workingDuration : 0;
+
+        return [
+            'diesel_consumed' => $dieselUsed,
+            'diesel_per_hectare' => $literPerHa,
+            'hectare_per_hour' => $haPerHr,
+        ];
+    }
+
+    public function saveRow($index)
+    {
+        if (!auth()->user()->hasPermission('work_logs.create')) {
+            abort(403, 'Permission denied.');
+        }
+
+        if (!isset($this->rows[$index])) {
+            return;
+        }
+
+        $this->validate([
+            "rows.$index.work_date" => 'required|date',
+            "rows.$index.work_status" => 'required|in:pending,working,paused,finished,problem',
+            "rows.$index.tractor_id" => 'required|exists:tractors,id',
+            "rows.$index.driver_id" => 'required|exists:drivers,id',
+            "rows.$index.zone_id" => 'required|exists:zones,id',
+            "rows.$index.task_category_id" => 'required|exists:task_categories,id',
+            "rows.$index.working_duration" => 'nullable|numeric|min:0',
+            "rows.$index.working_area" => 'nullable|numeric|min:0',
+            "rows.$index.diesel_start" => 'nullable|numeric|min:0',
+            "rows.$index.diesel_refill" => 'nullable|numeric|min:0',
+            "rows.$index.diesel_end" => 'nullable|numeric|min:0',
+            "rows.$index.gps_distance_meters" => 'nullable|numeric|min:0',
+            "rows.$index.estimated_plowed_area" => 'nullable|numeric|min:0',
+            "rows.$index.gps_progress_percent" => 'nullable|numeric|min:0|max:100',
+            "rows.$index.note" => 'nullable|string|max:2000',
+        ]);
+
+        $row = $this->rows[$index];
+        $calculated = $this->calculateRow($row);
+
+        FarmWorkLog::create([
+            'work_date' => $row['work_date'],
+            'work_status' => $row['work_status'],
+            'tractor_id' => $row['tractor_id'],
+            'driver_id' => $row['driver_id'],
+            'zone_id' => $row['zone_id'],
+            'task_category_id' => $row['task_category_id'],
+            'working_duration' => $row['working_duration'] ?: 0,
+            'working_area' => $row['working_area'] ?: 0,
+            'diesel_start' => $row['diesel_start'] ?: 0,
+            'diesel_refill' => $row['diesel_refill'] ?: 0,
+            'diesel_end' => $row['diesel_end'] ?: 0,
+            'diesel_consumed' => $calculated['diesel_consumed'],
+            'diesel_per_hectare' => $calculated['diesel_per_hectare'],
+            'hectare_per_hour' => $calculated['hectare_per_hour'],
+            'gps_distance_meters' => $row['gps_distance_meters'] ?: 0,
+            'estimated_plowed_area' => $row['estimated_plowed_area'] ?: 0,
+            'gps_progress_percent' => $row['gps_progress_percent'] ?: 0,
+            'note' => $row['note'] ?: null,
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+
+        unset($this->rows[$index]);
+        $this->rows = array_values($this->rows);
+
+        session()->flash('success', 'Work log saved successfully.');
+    }
+
+    public function edit($id)
+    {
+        if (!auth()->user()->hasPermission('work_logs.edit')) {
+            abort(403, 'Permission denied.');
+        }
+
+        $log = FarmWorkLog::findOrFail($id);
+
+        $this->editingId = $log->id;
+
+        $this->editRow = [
+            'work_date' => optional($log->work_date)->format('Y-m-d') ?: $log->work_date,
+            'work_status' => $log->work_status,
+            'tractor_id' => $log->tractor_id,
+            'driver_id' => $log->driver_id,
+            'zone_id' => $log->zone_id,
+            'task_category_id' => $log->task_category_id,
+            'working_duration' => $log->working_duration,
+            'working_area' => $log->working_area,
+            'diesel_start' => $log->diesel_start,
+            'diesel_refill' => $log->diesel_refill,
+            'diesel_end' => $log->diesel_end,
+            'gps_distance_meters' => $log->gps_distance_meters,
+            'estimated_plowed_area' => $log->estimated_plowed_area,
+            'gps_progress_percent' => $log->gps_progress_percent,
+            'note' => $log->note,
+        ];
+    }
+
+    public function cancelEdit()
+    {
+        $this->editingId = null;
+
+        $this->editRow = [
+            'work_date' => '',
+            'work_status' => 'pending',
+            'tractor_id' => '',
+            'driver_id' => '',
+            'zone_id' => '',
+            'task_category_id' => '',
+            'working_duration' => '',
+            'working_area' => '',
+            'diesel_start' => '',
+            'diesel_refill' => '',
+            'diesel_end' => '',
+            'gps_distance_meters' => '',
+            'estimated_plowed_area' => '',
+            'gps_progress_percent' => '',
+            'note' => '',
+        ];
+    }
+
+    public function updateRow()
+    {
+        if (!auth()->user()->hasPermission('work_logs.edit')) {
+            abort(403, 'Permission denied.');
+        }
+
+        $log = FarmWorkLog::findOrFail($this->editingId);
+
+        $this->validate([
+            'editRow.work_date' => 'required|date',
+            'editRow.work_status' => 'required|in:pending,working,paused,finished,problem',
+            'editRow.tractor_id' => 'required|exists:tractors,id',
+            'editRow.driver_id' => 'required|exists:drivers,id',
+            'editRow.zone_id' => 'required|exists:zones,id',
+            'editRow.task_category_id' => 'required|exists:task_categories,id',
+            'editRow.working_duration' => 'nullable|numeric|min:0',
+            'editRow.working_area' => 'nullable|numeric|min:0',
+            'editRow.diesel_start' => 'nullable|numeric|min:0',
+            'editRow.diesel_refill' => 'nullable|numeric|min:0',
+            'editRow.diesel_end' => 'nullable|numeric|min:0',
+            'editRow.gps_distance_meters' => 'nullable|numeric|min:0',
+            'editRow.estimated_plowed_area' => 'nullable|numeric|min:0',
+            'editRow.gps_progress_percent' => 'nullable|numeric|min:0|max:100',
+            'editRow.note' => 'nullable|string|max:2000',
+        ]);
+
+        $calculated = $this->calculateRow($this->editRow);
+
+        $log->update([
+            'work_date' => $this->editRow['work_date'],
+            'work_status' => $this->editRow['work_status'],
+            'tractor_id' => $this->editRow['tractor_id'],
+            'driver_id' => $this->editRow['driver_id'],
+            'zone_id' => $this->editRow['zone_id'],
+            'task_category_id' => $this->editRow['task_category_id'],
+            'working_duration' => $this->editRow['working_duration'] ?: 0,
+            'working_area' => $this->editRow['working_area'] ?: 0,
+            'diesel_start' => $this->editRow['diesel_start'] ?: 0,
+            'diesel_refill' => $this->editRow['diesel_refill'] ?: 0,
+            'diesel_end' => $this->editRow['diesel_end'] ?: 0,
+            'diesel_consumed' => $calculated['diesel_consumed'],
+            'diesel_per_hectare' => $calculated['diesel_per_hectare'],
+            'hectare_per_hour' => $calculated['hectare_per_hour'],
+            'gps_distance_meters' => $this->editRow['gps_distance_meters'] ?: 0,
+            'estimated_plowed_area' => $this->editRow['estimated_plowed_area'] ?: 0,
+            'gps_progress_percent' => $this->editRow['gps_progress_percent'] ?: 0,
+            'note' => $this->editRow['note'] ?: null,
+            'updated_by' => Auth::id(),
+        ]);
+
+        $this->cancelEdit();
+
+        session()->flash('success', 'Work log updated successfully.');
+    }
 
     public function delete($id)
     {
@@ -26,72 +271,90 @@ new class extends Component
 
         FarmWorkLog::findOrFail($id)->delete();
 
-        session()->flash('success', __('pages.work_log_deleted_success'));
-    }
-
-    public function driverLinkEnabled()
-    {
-        return SidebarMenuSetting::where('menu_key', 'driver_work_link')
-            ->where('is_visible', true)
-            ->exists();
+        session()->flash('success', 'Work log deleted successfully.');
     }
 
     public function resetFilter()
     {
-        $this->reset([
-            'search',
-            'date_from',
-            'date_to',
-            'tractor_id',
-            'driver_id',
-            'zone_id',
-            'task_category_id',
-        ]);
+        $this->search = '';
+        $this->dateFrom = '';
+        $this->dateTo = '';
+        $this->tractorId = '';
+        $this->driverId = '';
+        $this->zoneId = '';
+        $this->taskCategoryId = '';
+    }
+
+    public function getLogsProperty()
+    {
+        return FarmWorkLog::with(['tractor', 'driver', 'zone', 'taskCategory'])
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->whereHas('tractor', fn ($t) => $t->where('tractor_no', 'like', '%' . $this->search . '%')->orWhere('name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('driver', fn ($d) => $d->where('name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('zone', fn ($z) => $z->where('zone_code', 'like', '%' . $this->search . '%')->orWhere('name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('taskCategory', fn ($tc) => $tc->where('name', 'like', '%' . $this->search . '%'))
+                        ->orWhere('work_status', 'like', '%' . $this->search . '%');
+                });
+            })
+            ->when($this->dateFrom, fn ($q) => $q->whereDate('work_date', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->whereDate('work_date', '<=', $this->dateTo))
+            ->when($this->tractorId, fn ($q) => $q->where('tractor_id', $this->tractorId))
+            ->when($this->driverId, fn ($q) => $q->where('driver_id', $this->driverId))
+            ->when($this->zoneId, fn ($q) => $q->where('zone_id', $this->zoneId))
+            ->when($this->taskCategoryId, fn ($q) => $q->where('task_category_id', $this->taskCategoryId))
+            ->latest('work_date')
+            ->latest('id')
+            ->get();
+    }
+
+    public function getTotalHoursProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->working_duration ?? 0));
+    }
+
+    public function getTotalAreaProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->working_area ?? 0));
+    }
+
+    public function getTotalDieselRefillProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->diesel_refill ?? 0));
+    }
+
+    public function getTotalDieselUsedProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->diesel_consumed ?? 0));
+    }
+
+    public function getTotalGpsDistanceProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->gps_distance_meters ?? 0));
+    }
+
+    public function getTotalEstimatedPlowedAreaProperty()
+    {
+        return $this->logs->sum(fn ($log) => (float) ($log->estimated_plowed_area ?? 0));
+    }
+
+    public function getAvgLiterPerHaProperty()
+    {
+        return $this->totalArea > 0 ? $this->totalDieselUsed / $this->totalArea : 0;
+    }
+
+    public function getAvgHaPerHrProperty()
+    {
+        return $this->totalHours > 0 ? $this->totalArea / $this->totalHours : 0;
     }
 
     public function with()
     {
-        $logs = FarmWorkLog::with(['tractor', 'driver', 'zone', 'taskCategory'])
-            ->when($this->date_from, fn ($q) => $q->whereDate('work_date', '>=', $this->date_from))
-            ->when($this->date_to, fn ($q) => $q->whereDate('work_date', '<=', $this->date_to))
-            ->when($this->tractor_id, fn ($q) => $q->where('tractor_id', $this->tractor_id))
-            ->when($this->driver_id, fn ($q) => $q->where('driver_id', $this->driver_id))
-            ->when($this->zone_id, fn ($q) => $q->where('zone_id', $this->zone_id))
-            ->when($this->task_category_id, fn ($q) => $q->where('task_category_id', $this->task_category_id))
-            ->when($this->search, function ($q) {
-                $q->where(function ($query) {
-                    $query->whereHas('tractor', fn ($sub) => $sub->where('tractor_no', 'like', '%' . $this->search . '%'))
-                        ->orWhereHas('driver', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'))
-                        ->orWhereHas('zone', fn ($sub) => $sub->where('zone_code', 'like', '%' . $this->search . '%'))
-                        ->orWhereHas('taskCategory', fn ($sub) => $sub->where('name', 'like', '%' . $this->search . '%'));
-                });
-            })
-            ->latest()
-            ->get();
-
-        $totalArea = $logs->sum('working_area');
-        $totalHour = $logs->sum('working_duration');
-        $totalDieselRefill = $logs->sum('diesel_refill');
-        $totalDieselUsed = $logs->sum('diesel_consumed');
-        $totalGpsDistance = $logs->sum('gps_distance_meters');
-        $totalEstimatedPlowedArea = $logs->sum('estimated_plowed_area');
-
         return [
-            'logs' => $logs,
             'tractors' => Tractor::where('status', 'active')->orderBy('tractor_no')->get(),
             'drivers' => Driver::where('status', 'active')->orderBy('name')->get(),
             'zones' => Zone::where('status', 'active')->orderBy('zone_code')->get(),
             'taskCategories' => TaskCategory::where('status', 'active')->orderBy('name')->get(),
-
-            'totalHour' => $totalHour,
-            'totalArea' => $totalArea,
-            'totalDieselRefill' => $totalDieselRefill,
-            'totalDieselUsed' => $totalDieselUsed,
-            'totalLHa' => $totalArea > 0 ? $totalDieselUsed / $totalArea : 0,
-            'totalHaHr' => $totalHour > 0 ? $totalArea / $totalHour : 0,
-            'totalGpsDistance' => $totalGpsDistance,
-            'totalEstimatedPlowedArea' => $totalEstimatedPlowedArea,
-            'totalGpsProgress' => $totalArea > 0 ? ($totalEstimatedPlowedArea / $totalArea) * 100 : 0,
         ];
     }
 };
@@ -102,98 +365,213 @@ new class extends Component
     @include('components.shared-style')
     @include('components.toast-alert')
 
+    <style>
+        .filter-panel {
+            margin-bottom: 18px;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .filter-grid label {
+            display: block;
+            font-weight: 900;
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: #334155;
+        }
+
+        .filter-grid input,
+        .filter-grid select {
+            width: 100%;
+            height: 46px;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 10px 12px;
+            font-weight: 700;
+            background: #ffffff;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+        }
+
+        .work-table {
+            width: 100%;
+            min-width: 1950px;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        .work-table th {
+            background: #f8fafc;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 12px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        .work-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .work-table input,
+        .work-table select {
+            width: 100%;
+            min-width: 120px;
+            height: 42px;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 13px;
+            background: #ffffff;
+            font-weight: 700;
+        }
+
+        .row-no {
+            width: 45px;
+            min-width: 45px;
+            text-align: center;
+            font-weight: 900;
+            color: #64748b;
+        }
+
+        .new-row {
+            background: #f0fdf4;
+        }
+
+        .new-row td {
+            border-bottom: 1px solid #bbf7d0;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .total-row {
+            background: #f8fafc;
+            font-weight: 900;
+            border-top: 2px solid #d1d5db;
+        }
+
+        .total-row td {
+            border-bottom: 0;
+            padding: 14px 10px;
+            color: #0f172a;
+        }
+
+        .plus-cell {
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 10px;
+            background: #16a34a;
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 900;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .plus-cell:hover {
+            background: #15803d;
+        }
+
+        .danger-plus {
+            background: #dc2626;
+        }
+
+        .danger-plus:hover {
+            background: #b91c1c;
+        }
+
+        .error {
+            display: block;
+            color: #dc2626;
+            font-size: 12px;
+            margin-top: 4px;
+            font-weight: 700;
+        }
+
+        .status-text {
+            font-weight: 900;
+            text-transform: capitalize;
+        }
+
+        @media (max-width: 900px) {
+            .filter-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
     <div class="page-header">
         <div>
-            <h1 class="page-title">{{ __('pages.farm_work_logs') }}</h1>
-            <p class="page-subtitle">{{ __('pages.farm_work_logs_subtitle') }}</p>
+            <h1 class="page-title">Farm Work Logs</h1>
+            <p class="page-subtitle">Daily tractor work, area, fuel, GPS, and productivity records.</p>
         </div>
 
         <div class="page-actions">
-            <div class="language-switcher">
-                <a href="{{ route('language.switch', 'en') }}"
-                   class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">
-                    EN
-                </a>
+            {{-- <div class="language-switcher">
+                <a href="{{ route('language.switch', 'en') }}" class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">EN</a>
+                <a href="{{ route('language.switch', 'km') }}" class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">ខ្មែរ</a>
+            </div> --}}
 
-                <a href="{{ route('language.switch', 'km') }}"
-                   class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">
-                    ខ្មែរ
-                </a>
-            </div>
-
-            @if(auth()->user()->hasPermission('work_logs.export'))
-                <a href="{{ route('farm-work-logs.export.csv', [
-                    'search' => $search,
-                    'date_from' => $date_from,
-                    'date_to' => $date_to,
-                    'tractor_id' => $tractor_id,
-                    'driver_id' => $driver_id,
-                    'zone_id' => $zone_id,
-                    'task_category_id' => $task_category_id,
-                ]) }}" class="btn light">
-                    {{ __('pages.export_csv') }}
-                </a>
-
-                <a href="{{ route('farm-work-logs.export.excel', [
-                    'search' => $search,
-                    'date_from' => $date_from,
-                    'date_to' => $date_to,
-                    'tractor_id' => $tractor_id,
-                    'driver_id' => $driver_id,
-                    'zone_id' => $zone_id,
-                    'task_category_id' => $task_category_id,
-                ]) }}" class="btn light">
-                    {{ __('pages.export_excel') }}
-                </a>
-            @endif
-
-            <a href="{{ route('dashboard') }}" class="btn gray">
-                {{ __('pages.dashboard_button') }}
-            </a>
-
-            @if(auth()->user()->hasPermission('work_logs.create'))
-                <a href="{{ route('farm-work-logs.create') }}" class="btn">
-                    {{ __('pages.add_work_log') }}
-                </a>
-            @endif
+            <a href="{{ route('farm-work-logs.export.csv') }}" class="btn gray">Export CSV</a>
+            <a href="{{ route('farm-work-logs.export.excel') }}" class="btn gray">Export Excel</a>
+            <a href="{{ route('dashboard') }}" class="btn gray">Dashboard</a>
         </div>
     </div>
 
-    <div class="panel">
-        <h2 class="panel-title">{{ __('pages.filter') }}</h2>
+    <div class="panel filter-panel">
+        <h2 class="panel-title">Filter</h2>
 
-        <div class="form-grid">
+        <div class="filter-grid">
             <div>
-                <label>{{ __('pages.search') }}</label>
-                <input type="text"
-                       wire:model.live="search"
-                       placeholder="{{ __('pages.search_placeholder') }}">
+                <label>Search</label>
+                <input type="text" wire:model.live="search" placeholder="Search tractor, driver, zone, task">
             </div>
 
             <div>
-                <label>{{ __('pages.date_from') }}</label>
-                <input type="date" wire:model.live="date_from">
+                <label>Date From</label>
+                <input type="date" wire:model.live="dateFrom">
             </div>
 
             <div>
-                <label>{{ __('pages.date_to') }}</label>
-                <input type="date" wire:model.live="date_to">
+                <label>Date To</label>
+                <input type="date" wire:model.live="dateTo">
             </div>
 
             <div>
-                <label>{{ __('pages.tractor') }}</label>
-                <select wire:model.live="tractor_id">
-                    <option value="">{{ __('pages.all_tractors') }}</option>
+                <label>Tractor</label>
+                <select wire:model.live="tractorId">
+                    <option value="">All Tractors</option>
                     @foreach($tractors as $tractor)
-                        <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }}</option>
+                        <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }} {{ $tractor->name ? '- ' . $tractor->name : '' }}</option>
                     @endforeach
                 </select>
             </div>
 
             <div>
-                <label>{{ __('pages.driver') }}</label>
-                <select wire:model.live="driver_id">
-                    <option value="">{{ __('pages.all_drivers') }}</option>
+                <label>Driver</label>
+                <select wire:model.live="driverId">
+                    <option value="">All Drivers</option>
                     @foreach($drivers as $driver)
                         <option value="{{ $driver->id }}">{{ $driver->name }}</option>
                     @endforeach
@@ -201,157 +579,284 @@ new class extends Component
             </div>
 
             <div>
-                <label>{{ __('pages.zone') }}</label>
-                <select wire:model.live="zone_id">
-                    <option value="">{{ __('pages.all_zones') }}</option>
+                <label>Zone</label>
+                <select wire:model.live="zoneId">
+                    <option value="">All Zones</option>
                     @foreach($zones as $zone)
-                        <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                        <option value="{{ $zone->id }}">{{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}</option>
                     @endforeach
                 </select>
             </div>
 
             <div>
-                <label>{{ __('pages.task_category') }}</label>
-                <select wire:model.live="task_category_id">
-                    <option value="">{{ __('pages.all_tasks') }}</option>
-                    @foreach($taskCategories as $task)
-                        <option value="{{ $task->id }}">{{ $task->name }}</option>
+                <label>Task Category</label>
+                <select wire:model.live="taskCategoryId">
+                    <option value="">All Tasks</option>
+                    @foreach($taskCategories as $taskCategory)
+                        <option value="{{ $taskCategory->id }}">{{ $taskCategory->name }}</option>
                     @endforeach
                 </select>
             </div>
         </div>
 
-        <div class="actions">
-            <button wire:click="resetFilter" class="btn light">
-                {{ __('pages.reset_filter') }}
-            </button>
+        <div style="margin-top: 14px;">
+            <button type="button" wire:click="resetFilter" class="btn gray">Reset Filter</button>
         </div>
     </div>
 
     <div class="panel">
-        <h2 class="panel-title">{{ __('pages.work_log_list') }}</h2>
+        <h2 class="panel-title">Work Log List</h2>
 
         <div class="table-wrap">
-            <table>
+            <table class="work-table">
                 <thead>
                     <tr>
-                        <th>{{ __('pages.date') }}</th>
-                        <th>{{ __('pages.status') }}</th>
-                        <th>{{ __('pages.tractor') }}</th>
-                        <th>{{ __('pages.driver') }}</th>
-                        <th>{{ __('pages.zone') }}</th>
-                        <th>{{ __('pages.task') }}</th>
-                        <th>{{ __('pages.hour') }}</th>
-                        <th>{{ __('pages.area') }}</th>
-                        <th>{{ __('pages.diesel_start') }}</th>
-                        <th>{{ __('pages.diesel_refill') }}</th>
-                        <th>{{ __('pages.diesel_end') }}</th>
-                        <th>{{ __('pages.diesel_used') }}</th>
-                        <th>{{ __('pages.lha') }}</th>
-                        <th>{{ __('pages.hahr') }}</th>
-                        <th>{{ __('pages.gps_distance') }}</th>
-                        <th>{{ __('pages.estimated_plowed_area') }}</th>
-                        <th>{{ __('pages.gps_progress') }}</th>
-                        <th width="180">{{ __('pages.action') }}</th>
+                        <th>#</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Tractor</th>
+                        <th>Driver</th>
+                        <th>Zone</th>
+                        <th>Task</th>
+                        <th>Hour</th>
+                        <th>Area</th>
+                        <th>Diesel Start</th>
+                        <th>Diesel Refill</th>
+                        <th>Diesel End</th>
+                        <th>Diesel Used</th>
+                        <th>L/Ha</th>
+                        <th>Ha/Hr</th>
+                        <th>GPS Distance</th>
+                        <th>Estimated Area</th>
+                        <th>GPS Progress</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
 
                 <tbody>
-                    @forelse($logs as $log)
-                        <tr>
-                            <td>{{ optional($log->work_date)->format('d M Y') }}</td>
+                    @forelse($this->logs as $log)
+                        @if($editingId === $log->id)
+                            <tr class="new-row">
+                                <td class="row-no">{{ $loop->iteration }}</td>
 
-                            <td>
-                                @php
-                                    $status = $log->work_status ?? 'pending';
-                                @endphp
+                                <td><input type="date" wire:model.live="editRow.work_date"></td>
 
-                                <span class="status {{ $status }}">
-                                    {{ __('pages.' . $status) }}
-                                </span>
+                                <td>
+                                    <select wire:model.live="editRow.work_status">
+                                        <option value="pending">Pending</option>
+                                        <option value="working">Working</option>
+                                        <option value="paused">Paused</option>
+                                        <option value="finished">Finished</option>
+                                        <option value="problem">Problem</option>
+                                    </select>
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.tractor_id">
+                                        <option value="">Select Tractor</option>
+                                        @foreach($tractors as $tractor)
+                                            <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.driver_id">
+                                        <option value="">Select Driver</option>
+                                        @foreach($drivers as $driver)
+                                            <option value="{{ $driver->id }}">{{ $driver->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.zone_id">
+                                        <option value="">Select Zone</option>
+                                        @foreach($zones as $zone)
+                                            <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.task_category_id">
+                                        <option value="">Select Task</option>
+                                        @foreach($taskCategories as $taskCategory)
+                                            <option value="{{ $taskCategory->id }}">{{ $taskCategory->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
+                                <td><input type="number" step="0.01" wire:model.live="editRow.working_duration"></td>
+                                <td><input type="number" step="0.01" wire:model.live="editRow.working_area"></td>
+                                <td><input type="number" step="0.01" wire:model.live="editRow.diesel_start"></td>
+                                <td><input type="number" step="0.01" wire:model.live="editRow.diesel_refill"></td>
+                                <td><input type="number" step="0.01" wire:model.live="editRow.diesel_end"></td>
+
+                                @php($calc = $this->calculateRow($editRow))
+
+                                <td><strong>{{ number_format((float) $calc['diesel_consumed'], 2) }}</strong></td>
+                                <td>{{ number_format((float) $calc['diesel_per_hectare'], 2) }}</td>
+                                <td>{{ number_format((float) $calc['hectare_per_hour'], 2) }}</td>
+
+                                <td><input type="number" step="0.01" wire:model.live="editRow.gps_distance_meters"></td>
+                                <td><input type="number" step="0.0001" wire:model.live="editRow.estimated_plowed_area"></td>
+                                <td><input type="number" step="0.01" wire:model.live="editRow.gps_progress_percent"></td>
+
+                                <td>
+                                    <div class="table-actions">
+                                        <button type="button" wire:click="updateRow" class="mini">Save</button>
+                                        <button type="button" wire:click="cancelEdit" class="mini danger">Cancel</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @else
+                            <tr>
+                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td>{{ optional($log->work_date)->format('d M Y') ?: $log->work_date }}</td>
+                                <td><span class="status-text">{{ $log->work_status }}</span></td>
+                                <td>{{ $log->tractor->tractor_no ?? '-' }}</td>
+                                <td>{{ $log->driver->name ?? '-' }}</td>
+                                <td>{{ $log->zone->zone_code ?? '-' }}</td>
+                                <td>{{ $log->taskCategory->name ?? '-' }}</td>
+                                <td>{{ number_format((float) $log->working_duration, 2) }}</td>
+                                <td>{{ number_format((float) $log->working_area, 2) }}</td>
+                                <td>{{ number_format((float) $log->diesel_start, 2) }}</td>
+                                <td>{{ number_format((float) $log->diesel_refill, 2) }}</td>
+                                <td>{{ number_format((float) $log->diesel_end, 2) }}</td>
+                                <td><strong>{{ number_format((float) $log->diesel_consumed, 2) }}</strong></td>
+                                <td>{{ number_format((float) $log->diesel_per_hectare, 2) }}</td>
+                                <td>{{ number_format((float) $log->hectare_per_hour, 2) }}</td>
+                                <td>{{ number_format((float) $log->gps_distance_meters, 2) }} m</td>
+                                <td>{{ number_format((float) $log->estimated_plowed_area, 4) }} ha</td>
+                                <td>{{ number_format((float) $log->gps_progress_percent, 2) }}%</td>
+
+                                <td>
+                                    <div class="table-actions">
+                                        @if(auth()->user()->hasPermission('work_logs.edit'))
+                                            <button type="button" wire:click="edit({{ $log->id }})" class="mini">Edit</button>
+                                        @endif
+
+                                        @if(auth()->user()->hasPermission('work_logs.delete'))
+                                            <button type="button" wire:click="delete({{ $log->id }})" class="mini danger" onclick="return confirm('Delete this work log?')">Delete</button>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
+                    @empty
+                        @if(count($rows) === 0)
+                            <tr>
+                                <td colspan="19" class="empty">No work log found.</td>
+                            </tr>
+                        @endif
+                    @endforelse
+
+                    @foreach($rows as $index => $row)
+                        <tr class="new-row">
+                            <td class="row-no">
+                                <button type="button" wire:click="removeRow({{ $index }})" class="plus-cell danger-plus">×</button>
                             </td>
 
-                            <td>{{ $log->tractor->tractor_no ?? '-' }}</td>
-                            <td>{{ $log->driver->name ?? '-' }}</td>
-                            <td>{{ $log->zone->zone_code ?? '-' }}</td>
-                            <td>{{ $log->taskCategory->name ?? '-' }}</td>
-                            <td>{{ number_format($log->working_duration, 2) }}</td>
-                            <td>{{ number_format($log->working_area, 2) }}</td>
-                            <td>{{ number_format($log->diesel_start, 2) }}</td>
-                            <td>{{ number_format($log->diesel_refill, 2) }}</td>
-                            <td>{{ number_format($log->diesel_end, 2) }}</td>
+                            <td><input type="date" wire:model.live="rows.{{ $index }}.work_date"></td>
 
                             <td>
-                                <strong>{{ number_format($log->diesel_consumed, 2) }}</strong>
+                                <select wire:model.live="rows.{{ $index }}.work_status">
+                                    <option value="pending">Pending</option>
+                                    <option value="working">Working</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="finished">Finished</option>
+                                    <option value="problem">Problem</option>
+                                </select>
                             </td>
 
-                            <td>{{ number_format($log->diesel_per_hectare, 2) }}</td>
-                            <td>{{ number_format($log->hectare_per_hour, 2) }}</td>
-                            <td>{{ number_format($log->gps_distance_meters ?? 0, 2) }} m</td>
-                            <td>{{ number_format($log->estimated_plowed_area ?? 0, 4) }} ha</td>
-                            <td>{{ number_format($log->gps_progress_percent ?? 0, 2) }}%</td>
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.tractor_id">
+                                    <option value="">Select Tractor</option>
+                                    @foreach($tractors as $tractor)
+                                        <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.driver_id">
+                                    <option value="">Select Driver</option>
+                                    @foreach($drivers as $driver)
+                                        <option value="{{ $driver->id }}">{{ $driver->name }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.zone_id">
+                                    <option value="">Select Zone</option>
+                                    @foreach($zones as $zone)
+                                        <option value="{{ $zone->id }}">{{ $zone->zone_code }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.task_category_id">
+                                    <option value="">Select Task</option>
+                                    @foreach($taskCategories as $taskCategory)
+                                        <option value="{{ $taskCategory->id }}">{{ $taskCategory->name }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.working_duration"></td>
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.working_area"></td>
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_start"></td>
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_refill"></td>
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_end"></td>
+
+                            @php($calc = $this->calculateRow($row))
+
+                            <td><strong>{{ number_format((float) $calc['diesel_consumed'], 2) }}</strong></td>
+                            <td>{{ number_format((float) $calc['diesel_per_hectare'], 2) }}</td>
+                            <td>{{ number_format((float) $calc['hectare_per_hour'], 2) }}</td>
+
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.gps_distance_meters"></td>
+                            <td><input type="number" step="0.0001" wire:model.live="rows.{{ $index }}.estimated_plowed_area"></td>
+                            <td><input type="number" step="0.01" wire:model.live="rows.{{ $index }}.gps_progress_percent"></td>
 
                             <td>
                                 <div class="table-actions">
-                                    @if(auth()->user()->hasPermission('work_logs.map'))
-                                        <a href="{{ route('farm-work-logs.map', $log->id) }}" class="mini">
-                                            {{ __('pages.map') }}
-                                        </a>
-                                    @endif
-
-                                    @if($this->driverLinkEnabled() && $log->driver_access_token)
-                                        <a href="{{ route('driver.work.show', $log->driver_access_token) }}"
-                                           target="_blank"
-                                           class="mini">
-                                            {{ __('pages.driver_link') }}
-                                        </a>
-                                    @endif
-
-                                    @if(auth()->user()->hasPermission('work_logs.edit'))
-                                        <a href="{{ route('farm-work-logs.edit', $log->id) }}" class="mini">
-                                            {{ __('pages.edit') }}
-                                        </a>
-                                    @endif
-
-                                    @if(auth()->user()->hasPermission('work_logs.delete'))
-                                        <button wire:click="delete({{ $log->id }})" class="mini danger">
-                                            {{ __('pages.delete') }}
-                                        </button>
-                                    @endif
+                                    <button type="button" wire:click="saveRow({{ $index }})" class="mini">Save</button>
+                                    <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">Remove</button>
                                 </div>
                             </td>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="18" class="empty">
-                                {{ __('pages.no_work_log_found') }}
-                            </td>
-                        </tr>
-                    @endforelse
+                    @endforeach
                 </tbody>
 
-                @if($logs->count() > 0)
-                    <tfoot>
-                        <tr style="background:#f8fafc; font-weight:900;">
-                            <td colspan="6" style="text-align:right;">
-                                {{ __('pages.total') }}
-                            </td>
+                <tfoot>
+                    <tr class="total-row">
+                        <td>
+                            @if(auth()->user()->hasPermission('work_logs.create'))
+                                <button type="button" wire:click="addRow" class="plus-cell">+</button>
+                            @else
+                                -
+                            @endif
+                        </td>
 
-                            <td>{{ number_format($totalHour, 2) }}</td>
-                            <td>{{ number_format($totalArea, 2) }}</td>
-                            <td>-</td>
-                            <td>{{ number_format($totalDieselRefill, 2) }}</td>
-                            <td>-</td>
-                            <td>{{ number_format($totalDieselUsed, 2) }}</td>
-                            <td>{{ number_format($totalLHa, 2) }}</td>
-                            <td>{{ number_format($totalHaHr, 2) }}</td>
-                            <td>{{ number_format($totalGpsDistance, 2) }} m</td>
-                            <td>{{ number_format($totalEstimatedPlowedArea, 4) }} ha</td>
-                            <td>{{ number_format($totalGpsProgress, 2) }}%</td>
-                            <td>-</td>
-                        </tr>
-                    </tfoot>
-                @endif
+                        <td colspan="6" style="text-align:right;">Total</td>
+                        <td>{{ number_format((float) $this->totalHours, 2) }}</td>
+                        <td>{{ number_format((float) $this->totalArea, 2) }}</td>
+                        <td>-</td>
+                        <td>{{ number_format((float) $this->totalDieselRefill, 2) }}</td>
+                        <td>-</td>
+                        <td>{{ number_format((float) $this->totalDieselUsed, 2) }}</td>
+                        <td>{{ number_format((float) $this->avgLiterPerHa, 2) }}</td>
+                        <td>{{ number_format((float) $this->avgHaPerHr, 2) }}</td>
+                        <td>{{ number_format((float) $this->totalGpsDistance, 2) }} m</td>
+                        <td>{{ number_format((float) $this->totalEstimatedPlowedArea, 4) }} ha</td>
+                        <td>-</td>
+                        <td>-</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     </div>

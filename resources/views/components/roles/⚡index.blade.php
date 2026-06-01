@@ -38,7 +38,7 @@ new class extends Component
         </div>
 
         <div class="page-actions">
-            <div class="language-switcher">
+            {{-- <div class="language-switcher">
                 <a href="{{ route('language.switch', 'en') }}"
                    class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">
                     EN
@@ -48,7 +48,7 @@ new class extends Component
                    class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">
                     ខ្មែរ
                 </a>
-            </div>
+            </div> --}}
 
             <a href="{{ route('roles.create') }}" class="btn">
                 {{ __('pages.add_role') }}
