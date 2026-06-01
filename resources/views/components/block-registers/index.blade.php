@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\BlockRegister;
 use App\Models\ZoneBlock;
 use App\Models\PlantingCycleType;
@@ -8,7 +9,12 @@ use Illuminate\Support\Facades\Auth;
 
 new class extends Component
 {
+    use WithPagination;
+
+    public $paginationTheme = 'tailwind';
+
     public $search = '';
+    public $perPage = 15;
     public $rows = [];
 
     public $editingId = null;
@@ -21,6 +27,16 @@ new class extends Component
         'expected_harvest' => '',
         'status' => 'active',
     ];
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
+
+    public function updatedPerPage()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -164,7 +180,14 @@ new class extends Component
         session()->flash('success', 'Block register deleted successfully.');
     }
 
-    public function getRegistersProperty()
+    public function resetFilter()
+    {
+        $this->search = '';
+        $this->perPage = 15;
+        $this->resetPage();
+    }
+
+    private function registersQuery()
     {
         return BlockRegister::with(['zoneBlock.zone', 'plantingCycleType'])
             ->when($this->search, function ($q) {
@@ -184,22 +207,29 @@ new class extends Component
                                 ->orWhere('name', 'like', '%' . $this->search . '%');
                         });
                 });
-            })
+            });
+    }
+
+    public function getRegistersProperty()
+    {
+        return $this->registersQuery()
             ->latest('planting_date')
             ->latest('id')
-            ->get();
+            ->paginate((int) $this->perPage);
     }
 
     public function getTotalAreaProperty()
     {
-        return $this->registers->sum(function ($register) {
-            return (float) optional($register->zoneBlock)->area;
-        });
+        return (clone $this->registersQuery())
+            ->get()
+            ->sum(function ($register) {
+                return (float) optional($register->zoneBlock)->area;
+            });
     }
 
     public function getTotalRegistersProperty()
     {
-        return $this->registers->count();
+        return (clone $this->registersQuery())->count();
     }
 
     public function with()
@@ -238,7 +268,7 @@ new class extends Component
             align-items: center;
             gap: 10px;
             flex: 1;
-            max-width: 480px;
+            max-width: 520px;
         }
 
         .filter-box input {
@@ -248,6 +278,29 @@ new class extends Component
             border-radius: 12px;
             padding: 10px 14px;
             font-weight: 700;
+            background: #ffffff;
+        }
+
+        .rows-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rows-control label {
+            font-size: 13px;
+            font-weight: 900;
+            color: #334155;
+            margin: 0;
+        }
+
+        .rows-control select {
+            width: 130px;
+            height: 42px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-weight: 800;
             background: #ffffff;
         }
 
@@ -373,6 +426,41 @@ new class extends Component
             margin-top: 4px;
             font-weight: 700;
         }
+
+        .pagination-wrap {
+            padding: 14px;
+            border-top: 1px solid #e5e7eb;
+            background: #ffffff;
+        }
+
+        .pagination-wrap nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-wrap a,
+        .pagination-wrap span {
+            font-weight: 800;
+        }
+
+        @media (max-width: 900px) {
+            .master-toolbar {
+                align-items: stretch;
+            }
+
+            .filter-box {
+                max-width: none;
+                width: 100%;
+            }
+
+            .rows-control {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
     </style>
 
     <div class="page-header">
@@ -382,18 +470,6 @@ new class extends Component
         </div>
 
         <div class="page-actions">
-            {{-- <div class="language-switcher">
-                <a href="{{ route('language.switch', 'en') }}"
-                   class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">
-                    EN
-                </a>
-
-                <a href="{{ route('language.switch', 'km') }}"
-                   class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">
-                    ខ្មែរ
-                </a>
-            </div> --}}
-
             <a href="{{ route('dashboard') }}" class="btn gray">
                 Dashboard
             </a>
@@ -406,6 +482,23 @@ new class extends Component
                 <input type="text"
                        wire:model.live="search"
                        placeholder="Filter block, zone, variety, cycle type, status">
+            </div>
+
+            <div class="rows-control">
+                <label>Rows Per Page</label>
+                <select wire:model.live="perPage">
+                    <option value="10">10 rows</option>
+                    <option value="15">15 rows</option>
+                    <option value="25">25 rows</option>
+                    <option value="50">50 rows</option>
+                    <option value="100">100 rows</option>
+                </select>
+
+                <button type="button"
+                        wire:click="resetFilter"
+                        class="btn gray">
+                    Reset
+                </button>
             </div>
         </div>
 
@@ -430,7 +523,9 @@ new class extends Component
                     @forelse($this->registers as $register)
                         @if($editingId === $register->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">
+                                    {{ ($this->registers->firstItem() ?? 1) + $loop->index }}
+                                </td>
 
                                 <td>
                                     <select class="block-select"
@@ -528,7 +623,9 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">
+                                    {{ ($this->registers->firstItem() ?? 1) + $loop->index }}
+                                </td>
 
                                 <td>{{ $register->zoneBlock->block_code ?? '-' }}</td>
 
@@ -730,6 +827,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+
+            <div class="pagination-wrap">
+                {{ $this->registers->links() }}
+            </div>
         </div>
     </div>
 </div>
