@@ -12,6 +12,8 @@ use App\Models\FuelStock;
 use App\Models\FuelTransaction;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 new class extends Component
 {
@@ -577,6 +579,137 @@ new class extends Component
         return $this->totalHours > 0 ? $this->totalArea / $this->totalHours : 0;
     }
 
+    public function exportWorkLogsExcel()
+{
+    if (!auth()->user()->hasPermission('work_logs.view')) {
+        abort(403, 'Permission denied.');
+    }
+
+    $logs = $this->logsQuery()
+        ->latest('work_date')
+        ->latest('id')
+        ->get();
+
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Farm Work Logs');
+
+    $headers = [
+        'A1' => '#',
+        'B1' => 'Date',
+        'C1' => 'Status',
+        'D1' => 'Tractor',
+        'E1' => 'Driver',
+        'F1' => 'Zone / Sub Zone',
+        'G1' => 'Task',
+        'H1' => 'Hour',
+        'I1' => 'Total Area',
+        'J1' => 'Diesel Start',
+        'K1' => 'Diesel Refill',
+        'L1' => 'Diesel End',
+        'M1' => 'Diesel Used',
+        'N1' => 'L/Ha',
+        'O1' => 'Ha/Hr',
+        'P1' => 'Note',
+    ];
+
+    foreach ($headers as $cell => $value) {
+        $sheet->setCellValue($cell, $value);
+    }
+
+    $rowNumber = 2;
+
+    foreach ($logs as $index => $log) {
+        $zoneLabel = '-';
+
+        if ($log->zone) {
+            $zoneLabel = $log->zone->zone_code;
+
+            if ($log->zone->name) {
+                $zoneLabel .= ' - ' . $log->zone->name;
+            }
+        }
+
+        if ($log->zoneBlock) {
+            $zoneLabel .= ' / ' . $log->zoneBlock->block_code;
+
+            if ($log->zoneBlock->name) {
+                $zoneLabel .= ' - ' . $log->zoneBlock->name;
+            }
+        } else {
+            $zoneLabel .= ' / No sub zone';
+        }
+
+        $sheet->setCellValue('A' . $rowNumber, $index + 1);
+        $sheet->setCellValue('B' . $rowNumber, optional($log->work_date)->format('Y-m-d') ?: $log->work_date);
+        $sheet->setCellValue('C' . $rowNumber, ucfirst($log->work_status ?? 'pending'));
+        $sheet->setCellValue('D' . $rowNumber, $log->tractor->tractor_no ?? '-');
+        $sheet->setCellValue('E' . $rowNumber, $log->driver->name ?? '-');
+        $sheet->setCellValue('F' . $rowNumber, $zoneLabel);
+        $sheet->setCellValue('G' . $rowNumber, $log->taskCategory->name ?? '-');
+
+        $sheet->setCellValue('H' . $rowNumber, (float) ($log->working_duration ?? 0));
+        $sheet->setCellValue('I' . $rowNumber, (float) ($log->working_area ?? 0));
+        $sheet->setCellValue('J' . $rowNumber, (float) ($log->diesel_start ?? 0));
+        $sheet->setCellValue('K' . $rowNumber, (float) ($log->diesel_refill ?? 0));
+        $sheet->setCellValue('L' . $rowNumber, (float) ($log->diesel_end ?? 0));
+
+        // Formula: Diesel Used = MAX((Diesel Start + Diesel Refill) - Diesel End, 0)
+        $sheet->setCellValue('M' . $rowNumber, '=MAX((J' . $rowNumber . '+K' . $rowNumber . ')-L' . $rowNumber . ',0)');
+
+        // Formula: L/Ha = Diesel Used / Total Area
+        $sheet->setCellValue('N' . $rowNumber, '=IF(I' . $rowNumber . '>0,M' . $rowNumber . '/I' . $rowNumber . ',0)');
+
+        // Formula: Ha/Hr = Total Area / Hour
+        $sheet->setCellValue('O' . $rowNumber, '=IF(H' . $rowNumber . '>0,I' . $rowNumber . '/H' . $rowNumber . ',0)');
+
+        $sheet->setCellValue('P' . $rowNumber, $log->note ?? '');
+
+        $rowNumber++;
+    }
+
+    $lastDataRow = $rowNumber - 1;
+
+    if ($lastDataRow >= 2) {
+        $sheet->setCellValue('G' . $rowNumber, 'Total');
+        $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
+        $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
+        $sheet->setCellValue('J' . $rowNumber, '-');
+        $sheet->setCellValue('K' . $rowNumber, '=SUM(K2:K' . $lastDataRow . ')');
+        $sheet->setCellValue('L' . $rowNumber, '-');
+        $sheet->setCellValue('M' . $rowNumber, '=SUM(M2:M' . $lastDataRow . ')');
+        $sheet->setCellValue('N' . $rowNumber, '=IF(I' . $rowNumber . '>0,M' . $rowNumber . '/I' . $rowNumber . ',0)');
+        $sheet->setCellValue('O' . $rowNumber, '=IF(H' . $rowNumber . '>0,I' . $rowNumber . '/H' . $rowNumber . ',0)');
+        $sheet->setCellValue('P' . $rowNumber, '-');
+    }
+
+    $highestRow = $sheet->getHighestRow();
+
+    $sheet->getStyle('A1:P1')->getFont()->setBold(true);
+    $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)->getFont()->setBold(true);
+
+    $sheet->getStyle('H2:O' . $highestRow)
+        ->getNumberFormat()
+        ->setFormatCode('#,##0.00');
+
+    foreach (range('A', 'P') as $column) {
+        $sheet->getColumnDimension($column)->setAutoSize(true);
+    }
+
+    $sheet->freezePane('A2');
+    $sheet->setAutoFilter('A1:P1');
+
+    $filename = 'farm-work-logs-' . now()->format('Y-m-d-His') . '.xlsx';
+
+    return response()->streamDownload(function () use ($spreadsheet) {
+        $writer = new Xlsx($spreadsheet);
+        $writer->setPreCalculateFormulas(false);
+        $writer->save('php://output');
+    }, $filename, [
+        'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]);
+}
+
     public function with()
     {
         return [
@@ -676,7 +809,9 @@ new class extends Component
 
         <div class="page-actions">
             <a href="{{ route('farm-work-logs.export.csv') }}" class="btn gray">Export CSV</a>
-            <a href="{{ route('farm-work-logs.export.excel') }}" class="btn gray">Export Excel</a>
+            <button type="button" wire:click="exportWorkLogsExcel" class="btn gray">
+                Export Excel
+            </button>
             <a href="{{ route('dashboard') }}" class="btn gray">Dashboard</a>
         </div>
     </div>

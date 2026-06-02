@@ -9,6 +9,8 @@
     $showZoneBlocks = $sidebarSettings['zone_blocks'] ?? true;
     $showTaskCategories = $sidebarSettings['task_categories'] ?? false;
     $showPlantingCycleTypes = $sidebarSettings['planting_cycle_types'] ?? true;
+
+    $showWorkPlans = $sidebarSettings['work_plans'] ?? true;
     $showBlockRegisters = $sidebarSettings['block_registers'] ?? true;
 
     $showFuelReport = $sidebarSettings['fuel_report'] ?? false;
@@ -27,8 +29,8 @@
 
     $hasFarmOperation = $user && (
         $user->hasPermission('stock_fuel.view') ||
+        ($showWorkPlans && $user->hasPermission('work_plans.view')) ||
         $user->hasPermission('work_logs.view') ||
-        $user->hasPermission('work_logs.create') ||
         ($showBlockRegisters && $user->hasPermission('block_registers.view'))
     );
 
@@ -60,6 +62,7 @@
     $mainActive = request()->routeIs('dashboard');
 
     $farmOperationActive = request()->routeIs('stock-fuel.*') ||
+        request()->routeIs('farm-work-plans.*') ||
         request()->routeIs('farm-work-logs.*') ||
         request()->routeIs('block-registers.*');
 
@@ -191,16 +194,24 @@
                         </a>
                     @endif
 
+                    @if($showWorkPlans && $user->hasPermission('work_plans.view'))
+                        <a href="{{ route('farm-work-plans.index') }}"
+                           class="farm-menu-link {{ request()->routeIs('farm-work-plans.*') ? 'active' : '' }}"
+                           title="{{ __('sidebar.work_plans') }}">
+                            <span class="farm-menu-icon">🗓️</span>
+                            <span>{{ __('sidebar.work_plans') }}</span>
+                        </a>
+                    @endif
+
                     @if($user->hasPermission('work_logs.view'))
                         <a href="{{ route('farm-work-logs.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.index') ? 'active' : '' }}"
+                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.*') ? 'active' : '' }}"
                            title="{{ __('sidebar.work_logs') }}">
                             <span class="farm-menu-icon">📝</span>
                             <span>{{ __('sidebar.work_logs') }}</span>
                         </a>
                     @endif
 
-                    
                     @if($showBlockRegisters && $user->hasPermission('block_registers.view'))
                         <a href="{{ route('block-registers.index') }}"
                            class="farm-menu-link {{ request()->routeIs('block-registers.*') ? 'active' : '' }}"

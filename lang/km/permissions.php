@@ -72,4 +72,8 @@ return [
 'planting_cycle_types.create' => 'បង្កើតប្រភេទវដ្តដាំដុះ',
 'planting_cycle_types.edit' => 'កែប្រែប្រភេទវដ្តដាំដុះ',
 'planting_cycle_types.delete' => 'លុបប្រភេទវដ្តដាំដុះ',
+'work_plans.view' => 'មើលផែនការការងារ',
+'work_plans.create' => 'បង្កើតផែនការការងារ',
+'work_plans.edit' => 'កែប្រែផែនការការងារ',
+'work_plans.delete' => 'លុបផែនការការងារ',
 ];

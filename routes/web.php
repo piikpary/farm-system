@@ -323,6 +323,9 @@ Route::livewire('/block-registers/{register}/edit', 'block-registers.edit')
     ->middleware('permission:block_registers.edit')
     ->name('block-registers.edit');
 });
+Route::livewire('/farm-work-plans', 'farm-work-plans.index')
+    ->middleware(['auth'])
+    ->name('farm-work-plans.index');
 Route::get('/lang/{locale}', function ($locale) {
     if (! in_array($locale, ['en', 'km'])) {
         abort(404);

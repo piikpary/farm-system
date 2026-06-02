@@ -2,18 +2,14 @@
 
 namespace App\Exports;
 
-use App\Exports\Concerns\WithFormulaCache;
 use App\Models\FarmWorkLog;
 use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithEvents;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithPreCalculateFormulas;
 use Maatwebsite\Excel\Events\AfterSheet;
 
-class FarmWorkLogsExport implements FromArray, WithHeadings, WithEvents, WithPreCalculateFormulas
+class FarmWorkLogsExport implements FromArray, ShouldAutoSize, WithEvents
 {
-    use WithFormulaCache;
-
     protected array $filters;
 
     public function __construct(array $filters = [])
@@ -21,40 +17,30 @@ class FarmWorkLogsExport implements FromArray, WithHeadings, WithEvents, WithPre
         $this->filters = $filters;
     }
 
-    public function headings(): array
-    {
-        return [
-            'Date',
-            'Status',
-            'Tractor',
-            'Driver',
-            'Zone',
-            'Task',
-            'Hour',
-            'Area',
-            'Diesel Start',
-            'Diesel Refill',
-            'Diesel End',
-            'Diesel Used',
-            'L/Ha',
-            'Ha/Hr',
-            'GPS Distance',
-            'Estimated Plowed Area',
-            'GPS Progress',
-            'Variance',
-            'Note',
-        ];
-    }
-
     public function array(): array
     {
-        $logs = FarmWorkLog::with(['tractor', 'driver', 'zone', 'taskCategory'])
+        $logs = FarmWorkLog::with(['tractor', 'driver', 'zone', 'zoneBlock', 'taskCategory'])
             ->when($this->filters['search'] ?? null, function ($q, $search) {
                 $q->where(function ($query) use ($search) {
-                    $query->whereHas('tractor', fn ($sub) => $sub->where('tractor_no', 'like', "%{$search}%"))
-                        ->orWhereHas('driver', fn ($sub) => $sub->where('name', 'like', "%{$search}%"))
-                        ->orWhereHas('zone', fn ($sub) => $sub->where('zone_code', 'like', "%{$search}%"))
-                        ->orWhereHas('taskCategory', fn ($sub) => $sub->where('name', 'like', "%{$search}%"));
+                    $query->whereHas('tractor', function ($t) use ($search) {
+                        $t->where('tractor_no', 'like', '%' . $search . '%')
+                            ->orWhere('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhereHas('driver', function ($d) use ($search) {
+                        $d->where('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhereHas('zone', function ($z) use ($search) {
+                        $z->where('zone_code', 'like', '%' . $search . '%')
+                            ->orWhere('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhereHas('zoneBlock', function ($b) use ($search) {
+                        $b->where('block_code', 'like', '%' . $search . '%')
+                            ->orWhere('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhereHas('taskCategory', function ($tc) use ($search) {
+                        $tc->where('name', 'like', '%' . $search . '%');
+                    })
+                    ->orWhere('work_status', 'like', '%' . $search . '%');
                 });
             })
             ->when($this->filters['date_from'] ?? null, fn ($q, $date) => $q->whereDate('work_date', '>=', $date))
@@ -64,19 +50,60 @@ class FarmWorkLogsExport implements FromArray, WithHeadings, WithEvents, WithPre
             ->when($this->filters['zone_id'] ?? null, fn ($q, $id) => $q->where('zone_id', $id))
             ->when($this->filters['task_category_id'] ?? null, fn ($q, $id) => $q->where('task_category_id', $id))
             ->latest('work_date')
+            ->latest('id')
             ->get();
 
         $rows = [];
 
+        $rows[] = [
+            '#',
+            'Date',
+            'Status',
+            'Tractor',
+            'Driver',
+            'Zone / Sub Zone',
+            'Task',
+            'Hour',
+            'Total Area',
+            'Diesel Start',
+            'Diesel Refill',
+            'Diesel End',
+            'Diesel Used',
+            'L/Ha',
+            'Ha/Hr',
+            'Note',
+        ];
+
+        $excelRow = 2;
+
         foreach ($logs as $index => $log) {
-            $excelRow = $index + 2;
+            $zoneLabel = '-';
+
+            if ($log->zone) {
+                $zoneLabel = $log->zone->zone_code;
+
+                if ($log->zone->name) {
+                    $zoneLabel .= ' - ' . $log->zone->name;
+                }
+            }
+
+            if ($log->zoneBlock) {
+                $zoneLabel .= ' / ' . $log->zoneBlock->block_code;
+
+                if ($log->zoneBlock->name) {
+                    $zoneLabel .= ' - ' . $log->zoneBlock->name;
+                }
+            } else {
+                $zoneLabel .= ' / No sub zone';
+            }
 
             $rows[] = [
-                optional($log->work_date)->format('Y-m-d'),
+                $index + 1,
+                optional($log->work_date)->format('Y-m-d') ?: $log->work_date,
                 ucfirst($log->work_status ?? 'pending'),
                 $log->tractor->tractor_no ?? '-',
                 $log->driver->name ?? '-',
-                $log->zone->zone_code ?? '-',
+                $zoneLabel,
                 $log->taskCategory->name ?? '-',
 
                 (float) ($log->working_duration ?? 0),
@@ -85,42 +112,36 @@ class FarmWorkLogsExport implements FromArray, WithHeadings, WithEvents, WithPre
                 (float) ($log->diesel_refill ?? 0),
                 (float) ($log->diesel_end ?? 0),
 
-                "=I{$excelRow}+J{$excelRow}-K{$excelRow}",
-                "=IF(H{$excelRow}>0,L{$excelRow}/H{$excelRow},0)",
-                "=IF(G{$excelRow}>0,H{$excelRow}/G{$excelRow},0)",
+                '=MAX((J' . $excelRow . '+K' . $excelRow . ')-L' . $excelRow . ',0)',
+                '=IF(I' . $excelRow . '>0,M' . $excelRow . '/I' . $excelRow . ',0)',
+                '=IF(H' . $excelRow . '>0,I' . $excelRow . '/H' . $excelRow . ',0)',
 
-                (float) ($log->gps_distance_meters ?? 0),
-                (float) ($log->estimated_plowed_area ?? 0),
-                (float) ($log->gps_progress_percent ?? 0),
-                "=IF(L{$excelRow}>0,0-L{$excelRow},0)",
                 $log->note ?? '',
             ];
+
+            $excelRow++;
         }
 
-        if (count($rows) > 0) {
-            $totalRow = count($rows) + 2;
-            $lastDataRow = $totalRow - 1;
+        $lastDataRow = $excelRow - 1;
 
+        if ($lastDataRow >= 2) {
             $rows[] = [
-                'TOTAL',
                 '',
                 '',
                 '',
                 '',
                 '',
-                "=SUM(G2:G{$lastDataRow})",
-                "=SUM(H2:H{$lastDataRow})",
                 '',
-                "=SUM(J2:J{$lastDataRow})",
-                '',
-                "=SUM(L2:L{$lastDataRow})",
-                "=IF(H{$totalRow}>0,L{$totalRow}/H{$totalRow},0)",
-                "=IF(G{$totalRow}>0,H{$totalRow}/G{$totalRow},0)",
-                "=SUM(O2:O{$lastDataRow})",
-                "=SUM(P2:P{$lastDataRow})",
-                "=IF(H{$totalRow}>0,P{$totalRow}/H{$totalRow}*100,0)",
-                "=SUM(R2:R{$lastDataRow})",
-                '',
+                'Total',
+                '=SUM(H2:H' . $lastDataRow . ')',
+                '=SUM(I2:I' . $lastDataRow . ')',
+                '-',
+                '=SUM(K2:K' . $lastDataRow . ')',
+                '-',
+                '=SUM(M2:M' . $lastDataRow . ')',
+                '=IF(I' . $excelRow . '>0,M' . $excelRow . '/I' . $excelRow . ',0)',
+                '=IF(H' . $excelRow . '>0,I' . $excelRow . '/H' . $excelRow . ',0)',
+                '-',
             ];
         }
 
@@ -131,25 +152,17 @@ class FarmWorkLogsExport implements FromArray, WithHeadings, WithEvents, WithPre
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
-                $this->registerFormulaCacheEvents($event);
-
                 $sheet = $event->sheet->getDelegate();
                 $highestRow = $sheet->getHighestRow();
-                $highestColumn = $sheet->getHighestColumn();
 
-                $sheet->getStyle("A1:{$highestColumn}1")->getFont()->setBold(true);
+                $sheet->getStyle('A1:P1')->getFont()->setBold(true);
 
-                if ($highestRow > 1) {
-                    $sheet->getStyle("A{$highestRow}:{$highestColumn}{$highestRow}")
-                        ->getFont()
-                        ->setBold(true);
-                }
-
-                foreach (range('A', $highestColumn) as $column) {
-                    $sheet->getColumnDimension($column)->setAutoSize(true);
-                }
+                $sheet->getStyle('H2:O' . $highestRow)
+                    ->getNumberFormat()
+                    ->setFormatCode('#,##0.00');
 
                 $sheet->freezePane('A2');
+                $sheet->setAutoFilter('A1:P1');
             },
         ];
     }

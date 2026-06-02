@@ -65,70 +65,29 @@ class PermissionSeeder extends Seeder
             ['key' => 'roles.edit', 'name' => 'Edit Role', 'group' => 'roles'],
             ['key' => 'roles.delete', 'name' => 'Delete Role', 'group' => 'roles'],
             ['key' => 'roles.assign_permissions', 'name' => 'Assign Role Permissions', 'group' => 'roles'],
+
             ['key' => 'ai_settings.view', 'name' => 'View AI Settings', 'group' => 'settings'],
             ['key' => 'ai_settings.update', 'name' => 'Update AI Settings', 'group' => 'settings'],
-            [
-    'key' => 'zone_blocks.view',
-    'name' => 'View Zone Blocks',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'zone_blocks.create',
-    'name' => 'Create Zone Blocks',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'zone_blocks.edit',
-    'name' => 'Edit Zone Blocks',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'zone_blocks.delete',
-    'name' => 'Delete Zone Blocks',
-    'group' => 'Master Data',
-],
 
-[
-    'key' => 'planting_cycle_types.view',
-    'name' => 'View Planting Cycle Types',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'planting_cycle_types.create',
-    'name' => 'Create Planting Cycle Types',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'planting_cycle_types.edit',
-    'name' => 'Edit Planting Cycle Types',
-    'group' => 'Master Data',
-],
-[
-    'key' => 'planting_cycle_types.delete',
-    'name' => 'Delete Planting Cycle Types',
-    'group' => 'Master Data',
-],
+            ['key' => 'zone_blocks.view', 'name' => 'View Zone Blocks', 'group' => 'Master Data'],
+            ['key' => 'zone_blocks.create', 'name' => 'Create Zone Blocks', 'group' => 'Master Data'],
+            ['key' => 'zone_blocks.edit', 'name' => 'Edit Zone Blocks', 'group' => 'Master Data'],
+            ['key' => 'zone_blocks.delete', 'name' => 'Delete Zone Blocks', 'group' => 'Master Data'],
 
-[
-    'key' => 'block_registers.view',
-    'name' => 'View Block Registers',
-    'group' => 'Farm Operation',
-],
-[
-    'key' => 'block_registers.create',
-    'name' => 'Create Block Registers',
-    'group' => 'Farm Operation',
-],
-[
-    'key' => 'block_registers.edit',
-    'name' => 'Edit Block Registers',
-    'group' => 'Farm Operation',
-],
-[
-    'key' => 'block_registers.delete',
-    'name' => 'Delete Block Registers',
-    'group' => 'Farm Operation',
-],
+            ['key' => 'planting_cycle_types.view', 'name' => 'View Planting Cycle Types', 'group' => 'Master Data'],
+            ['key' => 'planting_cycle_types.create', 'name' => 'Create Planting Cycle Types', 'group' => 'Master Data'],
+            ['key' => 'planting_cycle_types.edit', 'name' => 'Edit Planting Cycle Types', 'group' => 'Master Data'],
+            ['key' => 'planting_cycle_types.delete', 'name' => 'Delete Planting Cycle Types', 'group' => 'Master Data'],
+
+            ['key' => 'block_registers.view', 'name' => 'View Block Registers', 'group' => 'Farm Operation'],
+            ['key' => 'block_registers.create', 'name' => 'Create Block Registers', 'group' => 'Farm Operation'],
+            ['key' => 'block_registers.edit', 'name' => 'Edit Block Registers', 'group' => 'Farm Operation'],
+            ['key' => 'block_registers.delete', 'name' => 'Delete Block Registers', 'group' => 'Farm Operation'],
+
+            ['key' => 'work_plans.view', 'name' => 'View Work Plans', 'group' => 'Farm Operation'],
+            ['key' => 'work_plans.create', 'name' => 'Create Work Plans', 'group' => 'Farm Operation'],
+            ['key' => 'work_plans.edit', 'name' => 'Edit Work Plans', 'group' => 'Farm Operation'],
+            ['key' => 'work_plans.delete', 'name' => 'Delete Work Plans', 'group' => 'Farm Operation'],
         ];
 
         foreach ($permissions as $permission) {

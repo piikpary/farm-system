@@ -38,4 +38,6 @@ return [
     'zone_blocks' => 'Zone Blocks',
 'planting_cycle_types' => 'Cycle Types',
 'block_registers' => 'Block Register',
+'work_plans' => 'Work Plans',
+
 ];

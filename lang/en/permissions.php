@@ -72,4 +72,8 @@ return [
 'planting_cycle_types.create' => 'Create Planting Cycle Types',
 'planting_cycle_types.edit' => 'Edit Planting Cycle Types',
 'planting_cycle_types.delete' => 'Delete Planting Cycle Types',
+'work_plans.view' => 'View Work Plans',
+'work_plans.create' => 'Create Work Plans',
+'work_plans.edit' => 'Edit Work Plans',
+'work_plans.delete' => 'Delete Work Plans',
 ];

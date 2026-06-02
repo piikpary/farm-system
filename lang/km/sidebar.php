@@ -38,4 +38,5 @@ return [
     'zone_blocks' => 'ប្លុកតំបន់',
 'planting_cycle_types' => 'ប្រភេទវដ្តដាំដុះ',
 'block_registers' => 'បញ្ជីប្លុកដាំដុះ',
+'work_plans' => 'ផែនការការងារ',
 ];
