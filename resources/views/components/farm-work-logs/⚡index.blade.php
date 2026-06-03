@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\FarmWorkLog;
+use App\Models\FarmWorkPlan;
 use App\Models\Tractor;
 use App\Models\Driver;
 use App\Models\Zone;
@@ -28,12 +29,14 @@ new class extends Component
     public $driverId = '';
     public $zoneId = '';
     public $taskCategoryId = '';
+    public $workPlanId = '';
     public $perPage = 15;
 
     public $rows = [];
     public $editingId = null;
 
     public $editRow = [
+        'farm_work_plan_id' => '',
         'work_date' => '',
         'work_status' => 'pending',
         'tractor_id' => '',
@@ -57,6 +60,7 @@ new class extends Component
     public function updatedDriverId() { $this->resetPage(); }
     public function updatedZoneId() { $this->resetPage(); }
     public function updatedTaskCategoryId() { $this->resetPage(); }
+    public function updatedWorkPlanId() { $this->resetPage(); }
     public function updatedPerPage() { $this->resetPage(); }
 
     public function addRow()
@@ -67,6 +71,7 @@ new class extends Component
     public function emptyRow()
     {
         return [
+            'farm_work_plan_id' => '',
             'work_date' => now()->format('Y-m-d'),
             'work_status' => 'pending',
             'tractor_id' => '',
@@ -109,12 +114,6 @@ new class extends Component
             return;
         }
 
-        if (str_starts_with((string) $value, 'zone_')) {
-            $this->rows[$index]['zone_id'] = (int) str_replace('zone_', '', $value);
-            $this->rows[$index]['zone_block_id'] = '';
-            return;
-        }
-
         $block = ZoneBlock::find($value);
 
         if ($block) {
@@ -134,17 +133,115 @@ new class extends Component
             return;
         }
 
-        if (str_starts_with((string) $value, 'zone_')) {
-            $this->editRow['zone_id'] = (int) str_replace('zone_', '', $value);
-            $this->editRow['zone_block_id'] = '';
-            return;
-        }
-
         $block = ZoneBlock::find($value);
 
         if ($block) {
             $this->editRow['zone_id'] = $block->zone_id;
             $this->editRow['zone_block_id'] = $block->id;
+        }
+    }
+    public function formatZoneBlockLabel($block)
+{
+    if (!$block) {
+        return '-';
+    }
+
+    $zoneCode = optional($block->zone)->zone_code;
+
+    return ($zoneCode ? $zoneCode . '.' : '') . $block->block_code;
+}
+
+    public function getWorkPlanZoneBlocks($planId)
+    {
+        if (!$planId) {
+            return collect();
+        }
+
+        $plan = FarmWorkPlan::find($planId);
+
+        if (!$plan) {
+            return collect();
+        }
+
+        $zoneBlockIds = is_array($plan->zone_block_ids) ? $plan->zone_block_ids : [];
+
+        if (empty($zoneBlockIds)) {
+            return collect();
+        }
+
+        return ZoneBlock::with('zone')
+            ->whereIn('id', $zoneBlockIds)
+            ->where('status', 'active')
+            ->orderBy('zone_id')
+            ->orderBy('block_code')
+            ->get();
+    }
+
+    public function applyWorkPlanToRow($index)
+    {
+        if (!isset($this->rows[$index])) {
+            return;
+        }
+
+        $planId = $this->rows[$index]['farm_work_plan_id'] ?? null;
+
+        $this->rows[$index]['zone_id'] = '';
+        $this->rows[$index]['zone_block_id'] = '';
+        $this->rows[$index]['zone_block_select'] = '';
+
+        if (!$planId) {
+            return;
+        }
+
+        $plan = FarmWorkPlan::find($planId);
+
+        if (!$plan) {
+            return;
+        }
+
+        $this->rows[$index]['task_category_id'] = $plan->task_category_id ?: '';
+        $this->rows[$index]['work_date'] = optional($plan->plan_date)->format('Y-m-d') ?: now()->format('Y-m-d');
+
+        $blocks = $this->getWorkPlanZoneBlocks($planId);
+
+        if ($blocks->count() === 1) {
+            $block = $blocks->first();
+
+            $this->rows[$index]['zone_id'] = $block->zone_id;
+            $this->rows[$index]['zone_block_id'] = $block->id;
+            $this->rows[$index]['zone_block_select'] = (string) $block->id;
+        }
+    }
+
+    public function applyWorkPlanToEdit()
+    {
+        $planId = $this->editRow['farm_work_plan_id'] ?? null;
+
+        $this->editRow['zone_id'] = '';
+        $this->editRow['zone_block_id'] = '';
+        $this->editRow['zone_block_select'] = '';
+
+        if (!$planId) {
+            return;
+        }
+
+        $plan = FarmWorkPlan::find($planId);
+
+        if (!$plan) {
+            return;
+        }
+
+        $this->editRow['task_category_id'] = $plan->task_category_id ?: '';
+        $this->editRow['work_date'] = optional($plan->plan_date)->format('Y-m-d') ?: now()->format('Y-m-d');
+
+        $blocks = $this->getWorkPlanZoneBlocks($planId);
+
+        if ($blocks->count() === 1) {
+            $block = $blocks->first();
+
+            $this->editRow['zone_id'] = $block->zone_id;
+            $this->editRow['zone_block_id'] = $block->id;
+            $this->editRow['zone_block_select'] = (string) $block->id;
         }
     }
 
@@ -268,12 +365,13 @@ new class extends Component
         $this->syncZoneSelection($index);
 
         $this->validate([
+            "rows.$index.farm_work_plan_id" => 'required|exists:farm_work_plans,id',
             "rows.$index.work_date" => 'required|date',
             "rows.$index.work_status" => 'required|in:pending,working,paused,finished,problem',
             "rows.$index.tractor_id" => 'required|exists:tractors,id',
             "rows.$index.driver_id" => 'required|exists:drivers,id',
             "rows.$index.zone_id" => 'required|exists:zones,id',
-            "rows.$index.zone_block_id" => 'nullable|exists:zone_blocks,id',
+            "rows.$index.zone_block_id" => 'required|exists:zone_blocks,id',
             "rows.$index.task_category_id" => 'required|exists:task_categories,id',
             "rows.$index.working_duration" => 'nullable|numeric|min:0',
             "rows.$index.working_area" => 'nullable|numeric|min:0',
@@ -289,12 +387,13 @@ new class extends Component
         try {
             DB::transaction(function () use ($row, $calculated) {
                 $workLog = FarmWorkLog::create([
+                    'farm_work_plan_id' => $row['farm_work_plan_id'],
                     'work_date' => $row['work_date'],
                     'work_status' => $row['work_status'],
                     'tractor_id' => $row['tractor_id'],
                     'driver_id' => $row['driver_id'],
                     'zone_id' => $row['zone_id'],
-                    'zone_block_id' => $row['zone_block_id'] ?: null,
+                    'zone_block_id' => $row['zone_block_id'],
                     'task_category_id' => $row['task_category_id'],
                     'working_duration' => $row['working_duration'] ?: 0,
                     'working_area' => $row['working_area'] ?: 0,
@@ -323,7 +422,7 @@ new class extends Component
             unset($this->rows[$index]);
             $this->rows = array_values($this->rows);
 
-            session()->flash('success', 'Work log saved successfully, fuel stock deducted, and history created.');
+            session()->flash('success', 'Work log saved successfully, linked with work plan, fuel stock deducted, and history created.');
         } catch (\Exception $e) {
             session()->flash('error', $e->getMessage());
         }
@@ -339,11 +438,10 @@ new class extends Component
 
         $this->editingId = $log->id;
 
-        $zoneSelect = $log->zone_block_id
-            ? (string) $log->zone_block_id
-            : ($log->zone_id ? 'zone_' . $log->zone_id : '');
+        $zoneSelect = $log->zone_block_id ? (string) $log->zone_block_id : '';
 
         $this->editRow = [
+            'farm_work_plan_id' => $log->farm_work_plan_id,
             'work_date' => optional($log->work_date)->format('Y-m-d') ?: $log->work_date,
             'work_status' => $log->work_status,
             'tractor_id' => $log->tractor_id,
@@ -366,6 +464,7 @@ new class extends Component
         $this->editingId = null;
 
         $this->editRow = [
+            'farm_work_plan_id' => '',
             'work_date' => '',
             'work_status' => 'pending',
             'tractor_id' => '',
@@ -394,12 +493,13 @@ new class extends Component
         $log = FarmWorkLog::findOrFail($this->editingId);
 
         $this->validate([
+            'editRow.farm_work_plan_id' => 'required|exists:farm_work_plans,id',
             'editRow.work_date' => 'required|date',
             'editRow.work_status' => 'required|in:pending,working,paused,finished,problem',
             'editRow.tractor_id' => 'required|exists:tractors,id',
             'editRow.driver_id' => 'required|exists:drivers,id',
             'editRow.zone_id' => 'required|exists:zones,id',
-            'editRow.zone_block_id' => 'nullable|exists:zone_blocks,id',
+            'editRow.zone_block_id' => 'required|exists:zone_blocks,id',
             'editRow.task_category_id' => 'required|exists:task_categories,id',
             'editRow.working_duration' => 'nullable|numeric|min:0',
             'editRow.working_area' => 'nullable|numeric|min:0',
@@ -436,12 +536,13 @@ new class extends Component
                 }
 
                 $log->update([
+                    'farm_work_plan_id' => $this->editRow['farm_work_plan_id'],
                     'work_date' => $this->editRow['work_date'],
                     'work_status' => $this->editRow['work_status'],
                     'tractor_id' => $this->editRow['tractor_id'],
                     'driver_id' => $this->editRow['driver_id'],
                     'zone_id' => $this->editRow['zone_id'],
-                    'zone_block_id' => $this->editRow['zone_block_id'] ?: null,
+                    'zone_block_id' => $this->editRow['zone_block_id'],
                     'task_category_id' => $this->editRow['task_category_id'],
                     'working_duration' => $this->editRow['working_duration'] ?: 0,
                     'working_area' => $this->editRow['working_area'] ?: 0,
@@ -461,7 +562,7 @@ new class extends Component
 
             $this->cancelEdit();
 
-            session()->flash('success', 'Work log updated, fuel stock adjusted, and history created.');
+            session()->flash('success', 'Work log updated, linked with work plan, fuel stock adjusted, and history created.');
         } catch (\Exception $e) {
             session()->flash('error', $e->getMessage());
         }
@@ -502,6 +603,7 @@ new class extends Component
         $this->driverId = '';
         $this->zoneId = '';
         $this->taskCategoryId = '';
+        $this->workPlanId = '';
         $this->perPage = 15;
 
         $this->resetPage();
@@ -509,10 +611,15 @@ new class extends Component
 
     private function logsQuery()
     {
-        return FarmWorkLog::with(['tractor', 'driver', 'zone', 'zoneBlock', 'taskCategory'])
+        return FarmWorkLog::with(['workPlan.taskCategory', 'tractor', 'driver', 'zone', 'zoneBlock', 'taskCategory'])
             ->when($this->search, function ($q) {
                 $q->where(function ($query) {
-                    $query->whereHas('tractor', function ($t) {
+                    $query->whereHas('workPlan', function ($wp) {
+                        $wp->where('id', 'like', '%' . $this->search . '%')
+                            ->orWhere('title', 'like', '%' . $this->search . '%')
+                            ->orWhere('status', 'like', '%' . $this->search . '%');
+                    })
+                    ->orWhereHas('tractor', function ($t) {
                         $t->where('tractor_no', 'like', '%' . $this->search . '%')
                             ->orWhere('name', 'like', '%' . $this->search . '%');
                     })
@@ -538,7 +645,8 @@ new class extends Component
             ->when($this->tractorId, fn ($q) => $q->where('tractor_id', $this->tractorId))
             ->when($this->driverId, fn ($q) => $q->where('driver_id', $this->driverId))
             ->when($this->zoneId, fn ($q) => $q->where('zone_id', $this->zoneId))
-            ->when($this->taskCategoryId, fn ($q) => $q->where('task_category_id', $this->taskCategoryId));
+            ->when($this->taskCategoryId, fn ($q) => $q->where('task_category_id', $this->taskCategoryId))
+            ->when($this->workPlanId, fn ($q) => $q->where('farm_work_plan_id', $this->workPlanId));
     }
 
     public function getLogsProperty()
@@ -580,139 +688,148 @@ new class extends Component
     }
 
     public function exportWorkLogsExcel()
-{
-    if (!auth()->user()->hasPermission('work_logs.view')) {
-        abort(403, 'Permission denied.');
-    }
-
-    $logs = $this->logsQuery()
-        ->latest('work_date')
-        ->latest('id')
-        ->get();
-
-    $spreadsheet = new Spreadsheet();
-    $sheet = $spreadsheet->getActiveSheet();
-    $sheet->setTitle('Farm Work Logs');
-
-    $headers = [
-        'A1' => '#',
-        'B1' => 'Date',
-        'C1' => 'Status',
-        'D1' => 'Tractor',
-        'E1' => 'Driver',
-        'F1' => 'Zone / Sub Zone',
-        'G1' => 'Task',
-        'H1' => 'Hour',
-        'I1' => 'Total Area',
-        'J1' => 'Diesel Start',
-        'K1' => 'Diesel Refill',
-        'L1' => 'Diesel End',
-        'M1' => 'Diesel Used',
-        'N1' => 'L/Ha',
-        'O1' => 'Ha/Hr',
-        'P1' => 'Note',
-    ];
-
-    foreach ($headers as $cell => $value) {
-        $sheet->setCellValue($cell, $value);
-    }
-
-    $rowNumber = 2;
-
-    foreach ($logs as $index => $log) {
-        $zoneLabel = '-';
-
-        if ($log->zone) {
-            $zoneLabel = $log->zone->zone_code;
-
-            if ($log->zone->name) {
-                $zoneLabel .= ' - ' . $log->zone->name;
-            }
+    {
+        if (!auth()->user()->hasPermission('work_logs.view')) {
+            abort(403, 'Permission denied.');
         }
 
-        if ($log->zoneBlock) {
-            $zoneLabel .= ' / ' . $log->zoneBlock->block_code;
+        $logs = $this->logsQuery()
+            ->latest('work_date')
+            ->latest('id')
+            ->get();
 
-            if ($log->zoneBlock->name) {
-                $zoneLabel .= ' - ' . $log->zoneBlock->name;
-            }
-        } else {
-            $zoneLabel .= ' / No sub zone';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Farm Work Logs');
+
+        $headers = [
+            'A1' => '#',
+            'B1' => 'Work Plan',
+            'C1' => 'Date',
+            'D1' => 'Status',
+            'E1' => 'Tractor',
+            'F1' => 'Driver',
+            'G1' => 'Zone / Sub Zone',
+            'H1' => 'Task',
+            'I1' => 'Hour',
+            'J1' => 'Total Area',
+            'K1' => 'Diesel Start',
+            'L1' => 'Diesel Refill',
+            'M1' => 'Diesel End',
+            'N1' => 'Diesel Used',
+            'O1' => 'L/Ha',
+            'P1' => 'Ha/Hr',
+            'Q1' => 'Note',
+        ];
+
+        foreach ($headers as $cell => $value) {
+            $sheet->setCellValue($cell, $value);
         }
 
-        $sheet->setCellValue('A' . $rowNumber, $index + 1);
-        $sheet->setCellValue('B' . $rowNumber, optional($log->work_date)->format('Y-m-d') ?: $log->work_date);
-        $sheet->setCellValue('C' . $rowNumber, ucfirst($log->work_status ?? 'pending'));
-        $sheet->setCellValue('D' . $rowNumber, $log->tractor->tractor_no ?? '-');
-        $sheet->setCellValue('E' . $rowNumber, $log->driver->name ?? '-');
-        $sheet->setCellValue('F' . $rowNumber, $zoneLabel);
-        $sheet->setCellValue('G' . $rowNumber, $log->taskCategory->name ?? '-');
+        $rowNumber = 2;
 
-        $sheet->setCellValue('H' . $rowNumber, (float) ($log->working_duration ?? 0));
-        $sheet->setCellValue('I' . $rowNumber, (float) ($log->working_area ?? 0));
-        $sheet->setCellValue('J' . $rowNumber, (float) ($log->diesel_start ?? 0));
-        $sheet->setCellValue('K' . $rowNumber, (float) ($log->diesel_refill ?? 0));
-        $sheet->setCellValue('L' . $rowNumber, (float) ($log->diesel_end ?? 0));
+        foreach ($logs as $index => $log) {
+            $zoneLabel = '-';
 
-        // Formula: Diesel Used = MAX((Diesel Start + Diesel Refill) - Diesel End, 0)
-        $sheet->setCellValue('M' . $rowNumber, '=MAX((J' . $rowNumber . '+K' . $rowNumber . ')-L' . $rowNumber . ',0)');
+            if ($log->zone) {
+                $zoneLabel = $log->zone->zone_code;
 
-        // Formula: L/Ha = Diesel Used / Total Area
-        $sheet->setCellValue('N' . $rowNumber, '=IF(I' . $rowNumber . '>0,M' . $rowNumber . '/I' . $rowNumber . ',0)');
+                if ($log->zone->name) {
+                    $zoneLabel .= ' - ' . $log->zone->name;
+                }
+            }
 
-        // Formula: Ha/Hr = Total Area / Hour
-        $sheet->setCellValue('O' . $rowNumber, '=IF(H' . $rowNumber . '>0,I' . $rowNumber . '/H' . $rowNumber . ',0)');
+            if ($log->zoneBlock) {
+                $zoneLabel = $this->formatZoneBlockLabel($log->zoneBlock);
 
-        $sheet->setCellValue('P' . $rowNumber, $log->note ?? '');
+                if ($log->zoneBlock->name) {
+                    $zoneLabel .= ' - ' . $log->zoneBlock->name;
+                }
+            } else {
+                $zoneLabel = ($log->zone->zone_code ?? '-') . ' - No sub zone';
+            }
 
-        $rowNumber++;
+            $workPlanLabel = $log->workPlan
+                ? ($log->workPlan->title ?: '-')
+                : 'No Plan';
+
+            $sheet->setCellValue('A' . $rowNumber, $index + 1);
+            $sheet->setCellValue('B' . $rowNumber, $workPlanLabel);
+            $sheet->setCellValue('C' . $rowNumber, optional($log->work_date)->format('Y-m-d') ?: $log->work_date);
+            $sheet->setCellValue('D' . $rowNumber, ucfirst($log->work_status ?? 'pending'));
+            $sheet->setCellValue('E' . $rowNumber, $log->tractor->tractor_no ?? '-');
+            $sheet->setCellValue('F' . $rowNumber, $log->driver->name ?? '-');
+            $sheet->setCellValue('G' . $rowNumber, $zoneLabel);
+            $sheet->setCellValue('H' . $rowNumber, $log->taskCategory->name ?? '-');
+            $sheet->setCellValue('I' . $rowNumber, (float) ($log->working_duration ?? 0));
+            $sheet->setCellValue('J' . $rowNumber, (float) ($log->working_area ?? 0));
+            $sheet->setCellValue('K' . $rowNumber, (float) ($log->diesel_start ?? 0));
+            $sheet->setCellValue('L' . $rowNumber, (float) ($log->diesel_refill ?? 0));
+            $sheet->setCellValue('M' . $rowNumber, (float) ($log->diesel_end ?? 0));
+            $sheet->setCellValue('N' . $rowNumber, '=MAX((K' . $rowNumber . '+L' . $rowNumber . ')-M' . $rowNumber . ',0)');
+            $sheet->setCellValue('O' . $rowNumber, '=IF(J' . $rowNumber . '>0,N' . $rowNumber . '/J' . $rowNumber . ',0)');
+            $sheet->setCellValue('P' . $rowNumber, '=IF(I' . $rowNumber . '>0,J' . $rowNumber . '/I' . $rowNumber . ',0)');
+            $sheet->setCellValue('Q' . $rowNumber, $log->note ?? '');
+
+            $rowNumber++;
+        }
+
+        $lastDataRow = $rowNumber - 1;
+
+        if ($lastDataRow >= 2) {
+            $sheet->setCellValue('H' . $rowNumber, 'Total');
+            $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
+            $sheet->setCellValue('J' . $rowNumber, '=SUM(J2:J' . $lastDataRow . ')');
+            $sheet->setCellValue('K' . $rowNumber, '-');
+            $sheet->setCellValue('L' . $rowNumber, '=SUM(L2:L' . $lastDataRow . ')');
+            $sheet->setCellValue('M' . $rowNumber, '-');
+            $sheet->setCellValue('N' . $rowNumber, '=SUM(N2:N' . $lastDataRow . ')');
+            $sheet->setCellValue('O' . $rowNumber, '=IF(J' . $rowNumber . '>0,N' . $rowNumber . '/J' . $rowNumber . ',0)');
+            $sheet->setCellValue('P' . $rowNumber, '=IF(I' . $rowNumber . '>0,J' . $rowNumber . '/I' . $rowNumber . ',0)');
+            $sheet->setCellValue('Q' . $rowNumber, '-');
+        }
+
+        $highestRow = $sheet->getHighestRow();
+
+        $sheet->getStyle('A1:Q1')->getFont()->setBold(true);
+        $sheet->getStyle('A' . $highestRow . ':Q' . $highestRow)->getFont()->setBold(true);
+
+        $sheet->getStyle('I2:P' . $highestRow)
+            ->getNumberFormat()
+            ->setFormatCode('#,##0.00');
+
+        foreach (range('A', 'Q') as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter('A1:Q1');
+
+        $filename = 'farm-work-logs-' . now()->format('Y-m-d-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new Xlsx($spreadsheet);
+            $writer->setPreCalculateFormulas(false);
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
-
-    $lastDataRow = $rowNumber - 1;
-
-    if ($lastDataRow >= 2) {
-        $sheet->setCellValue('G' . $rowNumber, 'Total');
-        $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
-        $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
-        $sheet->setCellValue('J' . $rowNumber, '-');
-        $sheet->setCellValue('K' . $rowNumber, '=SUM(K2:K' . $lastDataRow . ')');
-        $sheet->setCellValue('L' . $rowNumber, '-');
-        $sheet->setCellValue('M' . $rowNumber, '=SUM(M2:M' . $lastDataRow . ')');
-        $sheet->setCellValue('N' . $rowNumber, '=IF(I' . $rowNumber . '>0,M' . $rowNumber . '/I' . $rowNumber . ',0)');
-        $sheet->setCellValue('O' . $rowNumber, '=IF(H' . $rowNumber . '>0,I' . $rowNumber . '/H' . $rowNumber . ',0)');
-        $sheet->setCellValue('P' . $rowNumber, '-');
-    }
-
-    $highestRow = $sheet->getHighestRow();
-
-    $sheet->getStyle('A1:P1')->getFont()->setBold(true);
-    $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)->getFont()->setBold(true);
-
-    $sheet->getStyle('H2:O' . $highestRow)
-        ->getNumberFormat()
-        ->setFormatCode('#,##0.00');
-
-    foreach (range('A', 'P') as $column) {
-        $sheet->getColumnDimension($column)->setAutoSize(true);
-    }
-
-    $sheet->freezePane('A2');
-    $sheet->setAutoFilter('A1:P1');
-
-    $filename = 'farm-work-logs-' . now()->format('Y-m-d-His') . '.xlsx';
-
-    return response()->streamDownload(function () use ($spreadsheet) {
-        $writer = new Xlsx($spreadsheet);
-        $writer->setPreCalculateFormulas(false);
-        $writer->save('php://output');
-    }, $filename, [
-        'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ]);
-}
 
     public function with()
     {
         return [
+            'workPlans' => FarmWorkPlan::with('taskCategory')
+                ->whereIn('status', ['in_progress', 'complete'])
+                ->latest('plan_date')
+                ->latest('id')
+                ->get(),
+
+            'filterWorkPlans' => FarmWorkPlan::with('taskCategory')
+                ->latest('plan_date')
+                ->latest('id')
+                ->get(),
+
             'tractors' => Tractor::where('status', 'active')->orderBy('tractor_no')->get(),
             'drivers' => Driver::where('status', 'active')->orderBy('name')->get(),
             'zones' => Zone::where('status', 'active')->orderBy('zone_code')->get(),
@@ -767,13 +884,23 @@ new class extends Component
         }
 
         .table-wrap { overflow-x:auto; border:1px solid #e5e7eb; border-radius:16px; }
-        .work-table { width:100%; min-width:1600px; border-collapse:collapse; background:#ffffff; }
+        .work-table { width:100%; min-width:1850px; border-collapse:collapse; background:#ffffff; }
         .work-table th { background:#f8fafc; color:#0f172a; font-size:12px; font-weight:900; text-transform:uppercase; padding:12px 10px; border-bottom:1px solid #e5e7eb; white-space:nowrap; }
         .work-table td { padding:10px; border-bottom:1px solid #eef2f7; vertical-align:middle; white-space:nowrap; }
         .work-table input, .work-table select { width:100%; min-width:125px; height:42px; padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; font-size:13px; background:#ffffff; font-weight:700; }
 
+        .work-plan-select { min-width:300px !important; }
         .zone-combo { min-width:300px; }
-        .zone-block-select { min-width:280px !important; width:100% !important; border-color:#bbf7d0 !important; background:#ffffff !important; }
+
+        .zone-block-select {
+            min-width: 280px !important;
+            width: 100% !important;
+            border-color: #bbf7d0 !important;
+            background: #ffffff !important;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
         .zone-display { font-weight:900; color:#0f172a; }
         .sub-zone-display { display:block; margin-top:4px; font-size:12px; font-weight:900; color:#15803d; }
 
@@ -792,6 +919,25 @@ new class extends Component
 
         .error { display:block; color:#dc2626; font-size:12px; margin-top:4px; font-weight:700; }
         .status-text { font-weight:900; text-transform:capitalize; }
+
+        .work-plan-label {
+            display:inline-flex;
+            flex-direction:column;
+            gap:2px;
+            font-size:12px;
+            font-weight:900;
+            color:#0f172a;
+        }
+
+        .work-plan-label small {
+            color:#64748b;
+            font-weight:800;
+        }
+
+        .no-plan {
+            color:#dc2626;
+            font-weight:900;
+        }
 
         .pagination-wrap { padding:14px; border-top:1px solid #e5e7eb; background:#ffffff; }
         .pagination-wrap nav { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
@@ -822,7 +968,7 @@ new class extends Component
         <div class="filter-grid">
             <div>
                 <label>Search</label>
-                <input type="text" wire:model.live="search" placeholder="Search tractor, driver, zone, sub zone, task">
+                <input type="text" wire:model.live="search" placeholder="Search plan, tractor, driver, zone, sub zone, task">
             </div>
 
             <div>
@@ -833,6 +979,18 @@ new class extends Component
             <div>
                 <label>Date To</label>
                 <input type="date" wire:model.live="dateTo">
+            </div>
+
+            <div>
+                <label>Work Plan</label>
+                <select wire:model.live="workPlanId">
+                    <option value="">All Work Plans</option>
+                    @foreach($filterWorkPlans as $plan)
+                        <option value="{{ $plan->id }}">
+                            {{ $plan->title ?: '-' }}
+                        </option>
+                    @endforeach
+                </select>
             </div>
 
             <div>
@@ -902,6 +1060,7 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th>Work Plan</th>
                         <th>Date</th>
                         <th>Status</th>
                         <th>Tractor</th>
@@ -925,6 +1084,17 @@ new class extends Component
                         @if($editingId === $log->id)
                             <tr class="new-row">
                                 <td class="row-no">{{ ($this->logs->firstItem() ?? 1) + $loop->index }}</td>
+
+                                <td>
+                                    <select wire:model.live="editRow.farm_work_plan_id" wire:change="applyWorkPlanToEdit" class="work-plan-select">
+                                        <option value="">Select Work Plan</option>
+                                        @foreach($workPlans as $plan)
+                                            <option value="{{ $plan->id }}">
+                                                {{ $plan->title ?: '-' }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
                                 <td><input type="date" wire:model.live="editRow.work_date"></td>
 
@@ -957,21 +1127,18 @@ new class extends Component
                                 </td>
 
                                 <td class="zone-combo">
-                                    <select wire:model.live="editRow.zone_block_select" wire:change="syncEditZoneSelection" class="zone-block-select">
-                                        <option value="">Select Zone / Sub Zone</option>
+                                    <select wire:model.live="editRow.zone_block_select"
+                                            wire:change="syncEditZoneSelection"
+                                            class="zone-block-select">
+                                        <option value="">
+                                            {{ empty($editRow['farm_work_plan_id']) ? 'Select Work Plan first' : 'Select Zone / Sub Zone' }}
+                                        </option>
 
-                                        @foreach($zones as $zone)
-                                            <option value="zone_{{ $zone->id }}">
-                                                {{ $zone->zone_code }}{{ $zone->name ? ' - ' . $zone->name : '' }} / No Sub Zone
-                                            </option>
-
-                                            @foreach($zoneBlocks->where('zone_id', $zone->id) as $block)
-                                                <option value="{{ $block->id }}">
-                                                    {{ $zone->zone_code }}{{ $zone->name ? ' - ' . $zone->name : '' }}
-                                                    / {{ $block->block_code }}{{ $block->name ? ' - ' . $block->name : '' }}
-                                                </option>
-                                            @endforeach
-                                        @endforeach
+                                        @foreach($this->getWorkPlanZoneBlocks($editRow['farm_work_plan_id'] ?? null) as $block)
+    <option value="{{ $block->id }}">
+        {{ $this->formatZoneBlockLabel($block) }}
+    </option>
+@endforeach
                                     </select>
                                 </td>
 
@@ -1006,25 +1173,42 @@ new class extends Component
                         @else
                             <tr>
                                 <td class="row-no">{{ ($this->logs->firstItem() ?? 1) + $loop->index }}</td>
+
+                                <td>
+                                    @if($log->workPlan)
+                                        <span class="work-plan-label">
+                                            {{ $log->workPlan->title ?: '-' }}
+                                        </span>
+                                    @else
+                                        <span class="no-plan">No Plan</span>
+                                    @endif
+                                </td>
+
                                 <td>{{ optional($log->work_date)->format('d M Y') ?: $log->work_date }}</td>
                                 <td><span class="status-text">{{ $log->work_status }}</span></td>
                                 <td>{{ $log->tractor->tractor_no ?? '-' }}</td>
                                 <td>{{ $log->driver->name ?? '-' }}</td>
 
                                 <td>
-                                    <span class="zone-display">
-                                        {{ $log->zone->zone_code ?? '-' }}
-                                        {{ $log->zone && $log->zone->name ? '- ' . $log->zone->name : '' }}
-                                    </span>
-
                                     @if($log->zoneBlock)
-                                        <span class="sub-zone-display">
-                                            ↳ {{ $log->zoneBlock->block_code }}
-                                            {{ $log->zoneBlock->name ? '- ' . $log->zoneBlock->name : '' }}
-                                        </span>
-                                    @else
-                                        <span class="sub-zone-display" style="color:#94a3b8;">↳ No sub zone</span>
-                                    @endif
+    <span class="zone-display">
+        {{ $this->formatZoneBlockLabel($log->zoneBlock) }}
+    </span>
+
+    @if($log->zoneBlock->name)
+        <span class="sub-zone-display">
+            {{ $log->zoneBlock->name }}
+        </span>
+    @endif
+@else
+    <span class="zone-display">
+        {{ $log->zone->zone_code ?? '-' }}
+    </span>
+
+    <span class="sub-zone-display" style="color:#94a3b8;">
+        No sub zone
+    </span>
+@endif
                                 </td>
 
                                 <td>{{ $log->taskCategory->name ?? '-' }}</td>
@@ -1053,7 +1237,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="16" class="empty">No work log found.</td>
+                                <td colspan="17" class="empty">No work log found.</td>
                             </tr>
                         @endif
                     @endforelse
@@ -1062,6 +1246,17 @@ new class extends Component
                         <tr class="new-row">
                             <td class="row-no">
                                 <button type="button" wire:click="removeRow({{ $index }})" class="plus-cell danger-plus">×</button>
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.farm_work_plan_id" wire:change="applyWorkPlanToRow({{ $index }})" class="work-plan-select">
+                                    <option value="">Select Work Plan</option>
+                                    @foreach($workPlans as $plan)
+                                        <option value="{{ $plan->id }}">
+                                            {{ $plan->title ?: '-' }}
+                                        </option>
+                                    @endforeach
+                                </select>
                             </td>
 
                             <td><input type="date" wire:model.live="rows.{{ $index }}.work_date"></td>
@@ -1095,21 +1290,18 @@ new class extends Component
                             </td>
 
                             <td class="zone-combo">
-                                <select wire:model.live="rows.{{ $index }}.zone_block_select" wire:change="syncZoneSelection({{ $index }})" class="zone-block-select">
-                                    <option value="">Select Zone / Sub Zone</option>
+                                <select wire:model.live="rows.{{ $index }}.zone_block_select"
+                                        wire:change="syncZoneSelection({{ $index }})"
+                                        class="zone-block-select">
+                                    <option value="">
+                                        {{ empty($row['farm_work_plan_id']) ? 'Select Work Plan first' : 'Select Zone / Sub Zone' }}
+                                    </option>
 
-                                    @foreach($zones as $zone)
-                                        <option value="zone_{{ $zone->id }}">
-                                            {{ $zone->zone_code }}{{ $zone->name ? ' - ' . $zone->name : '' }} / No Sub Zone
-                                        </option>
-
-                                        @foreach($zoneBlocks->where('zone_id', $zone->id) as $block)
-                                            <option value="{{ $block->id }}">
-                                                {{ $zone->zone_code }}{{ $zone->name ? ' - ' . $zone->name : '' }}
-                                                / {{ $block->block_code }}{{ $block->name ? ' - ' . $block->name : '' }}
-                                            </option>
-                                        @endforeach
-                                    @endforeach
+                                    @foreach($this->getWorkPlanZoneBlocks($row['farm_work_plan_id'] ?? null) as $block)
+    <option value="{{ $block->id }}">
+        {{ $this->formatZoneBlockLabel($block) }}
+    </option>
+@endforeach
                                 </select>
                             </td>
 
@@ -1154,7 +1346,7 @@ new class extends Component
                             @endif
                         </td>
 
-                        <td colspan="6" style="text-align:right;">Total</td>
+                        <td colspan="7" style="text-align:right;">Total</td>
                         <td>{{ number_format((float) $this->totalHours, 2) }}</td>
                         <td>{{ number_format((float) $this->totalArea, 2) }}</td>
                         <td>-</td>

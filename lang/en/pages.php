@@ -559,4 +559,5 @@ return [
 'work_plan_saved' => 'Work plan saved successfully.',
 'work_plan_updated' => 'Work plan updated successfully.',
 'work_plan_deleted' => 'Work plan deleted successfully.',
+'title' => 'Title',
 ];

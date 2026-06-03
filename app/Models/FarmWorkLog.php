@@ -7,6 +7,8 @@ use Illuminate\Support\Str;
 class FarmWorkLog extends Model
 {
     protected $fillable = [
+        'farm_work_plan_id',
+
     'work_date',
     'work_status',
     'started_at',
@@ -33,7 +35,6 @@ class FarmWorkLog extends Model
     'request_fuel_per_hectare',
     'request_fuel',
     'variance_fuel',
-    'zone_block_id',
     'note',
     'created_by',
     'updated_by',
@@ -49,6 +50,11 @@ protected $casts = [
     'estimated_plowed_area' => 'decimal:4',
     'gps_progress_percent' => 'decimal:2',
 ];
+
+    public function workPlan()
+    {
+        return $this->belongsTo(FarmWorkPlan::class, 'farm_work_plan_id');
+    }
 
     public function tractor()
     {

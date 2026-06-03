@@ -532,7 +532,7 @@ return [
 'clear' => 'សម្អាត',
 'done' => 'រួចរាល់',
 'choose' => 'ជ្រើសរើស',
-
+'title' => 'ចំណងជើង',
 'no_work_plan_found' => 'មិនមានផែនការការងារ។',
 'no_zone_block_found' => 'មិនមានប្លុកតំបន់។',
 'selected' => 'បានជ្រើសរើស',

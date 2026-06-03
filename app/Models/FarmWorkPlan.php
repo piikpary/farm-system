@@ -16,6 +16,7 @@ class FarmWorkPlan extends Model
         'plan_end',
         'zone_block_ids',
         'plan_area',
+        'title',
         'request_l_per_hectare',
         'request_liters',
         'status',
@@ -37,5 +38,9 @@ class FarmWorkPlan extends Model
     public function taskCategory()
     {
         return $this->belongsTo(TaskCategory::class, 'task_category_id');
+    }
+    public function workLogs()
+    {
+        return $this->hasMany(FarmWorkLog::class, 'farm_work_plan_id');
     }
 }
