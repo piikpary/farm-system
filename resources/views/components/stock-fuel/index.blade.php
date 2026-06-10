@@ -290,12 +290,78 @@ new class extends Component
         .green-number { color:#166534; font-weight:900; }
         .red-number { color:#dc2626; font-weight:900; }
         .error { display:block; color:#dc2626; font-size:12px; margin-top:4px; font-weight:700; }
+        .fuel-simple-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.fuel-main-card,
+.fuel-small-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.fuel-main-card {
+    background: linear-gradient(135deg, #f0fdf4, #ffffff);
+}
+
+.fuel-card-label {
+    font-size: 13px;
+    font-weight: 900;
+    color: #64748b;
+    margin-bottom: 8px;
+}
+
+.fuel-card-value {
+    font-size: 36px;
+    line-height: 1;
+    font-weight: 900;
+    color: #166534;
+    margin-bottom: 10px;
+}
+
+.fuel-small-value {
+    font-size: 22px;
+    font-weight: 900;
+    color: #0f172a;
+}
+
+.fuel-card-note {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.simple-stock-table .master-table {
+    min-width: 650px;
+}
+
+@media (max-width: 1100px) {
+    .fuel-simple-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .fuel-simple-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .fuel-card-value {
+        font-size: 30px;
+    }
+}
     </style>
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Stock Fuel</h1>
-            <p class="page-subtitle">Control diesel stock balance, stock in, stock out, and fuel usage.</p>
+            <h1 class="page-title">{{ __('pages.stock_fuel') }}</h1>
+            <p class="page-subtitle">{{ __('pages.stock_fuel_subtitle') }}</p>
         </div>
 
         <div class="page-actions">
@@ -306,171 +372,194 @@ new class extends Component
     </div>
 
     <div class="panel">
-        <div class="master-toolbar">
-            <div class="filter-box">
-                <input type="text"
-                       wire:model.live="search"
-                       placeholder="Filter stock fuel by status or quantity">
+    <div class="master-toolbar">
+        <div class="filter-box">
+            <input type="text"
+                   wire:model.live="search"
+                   placeholder="{{ __('pages.search') ?? 'Search' }}">
+        </div>
+    </div>
+
+    <div class="fuel-simple-grid">
+        <div class="fuel-main-card">
+            <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
+            <div class="fuel-card-value">
+                {{ number_format((float) $this->totalCurrentStock, 2) }} L
+            </div>
+            <div class="fuel-card-note">
+                {{ __('pages.stock_fuel_subtitle') }}
             </div>
         </div>
 
-        <div class="master-table-wrap">
-            <table class="master-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Opening Stock</th>
-                        <th>Current Stock</th>
-                        <th>Total Stock In</th>
-                        <th>Total Stock Out</th>
-                        <th>Status</th>
-                        <th width="190">Action</th>
-                    </tr>
-                </thead>
+        
 
-                <tbody>
-                    @forelse($this->fuelStocks as $stock)
-                        @if($editingId === $stock->id)
-                            <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+        <div class="fuel-small-card">
+            <div class="fuel-card-label">{{ __('pages.total_stock_in') ?? 'Total Added' }}</div>
+            <div class="fuel-small-value green-number">
+                {{ number_format((float) $this->totalStockIn, 2) }} L
+            </div>
+        </div>
 
-                                <td>
-                                    <input type="number" step="0.01" wire:model.live="editRow.opening_stock">
-                                    @error('editRow.opening_stock') <small class="error">{{ $message }}</small> @enderror
-                                </td>
+        <div class="fuel-small-card">
+            <div class="fuel-card-label">{{ __('pages.total_stock_out') ?? 'Total Used' }}</div>
+            <div class="fuel-small-value red-number">
+                {{ number_format((float) $this->totalStockOut, 2) }} L
+            </div>
+        </div>
+    </div>
 
-                                <td>
-                                    <input type="number" step="0.01" wire:model.live="editRow.current_stock">
-                                    @error('editRow.current_stock') <small class="error">{{ $message }}</small> @enderror
-                                </td>
+    <div class="master-table-wrap simple-stock-table">
+        <table class="master-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
+                    <th>{{ __('pages.status') ?? 'Status' }}</th>
+                    <th width="190">{{ __('pages.action') ?? 'Action' }}</th>
+                </tr>
+            </thead>
 
-                                <td>
-                                    <input type="number" step="0.01" wire:model.live="editRow.total_stock_in">
-                                    @error('editRow.total_stock_in') <small class="error">{{ $message }}</small> @enderror
-                                </td>
-
-                                <td>
-                                    <input type="number" step="0.01" wire:model.live="editRow.total_stock_out">
-                                    @error('editRow.total_stock_out') <small class="error">{{ $message }}</small> @enderror
-                                </td>
-
-                                <td>
-                                    <select wire:model.live="editRow.status">
-                                        <option value="active">Active</option>
-                                        <option value="inactive">Inactive</option>
-                                    </select>
-                                    @error('editRow.status') <small class="error">{{ $message }}</small> @enderror
-                                </td>
-
-                                <td>
-                                    <div class="table-actions">
-                                        <button type="button" wire:click="updateRow" class="mini">Save</button>
-                                        <button type="button" wire:click="cancelEdit" class="mini danger">Cancel</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        @else
-                            <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
-                                <td>{{ number_format((float) $stock->opening_stock, 2) }} L</td>
-                                <td class="green-number">{{ number_format((float) $stock->current_stock, 2) }} L</td>
-                                <td class="green-number">{{ number_format((float) $stock->total_stock_in, 2) }} L</td>
-                                <td class="red-number">{{ number_format((float) $stock->total_stock_out, 2) }} L</td>
-                                <td><span class="status {{ $stock->status }}">{{ ucfirst($stock->status) }}</span></td>
-                                <td>
-                                    <div class="table-actions">
-                                        @if(auth()->user()->hasPermission('stock_fuel.edit'))
-                                            <button type="button" wire:click="edit({{ $stock->id }})" class="mini">Edit</button>
-                                        @endif
-
-                                        @if(auth()->user()->hasPermission('stock_fuel.delete'))
-                                            <button type="button"
-                                                    wire:click="delete({{ $stock->id }})"
-                                                    class="mini danger"
-                                                    onclick="return confirm('Delete this fuel stock?')">
-                                                Delete
-                                            </button>
-                                        @endif
-                                    </div>
-                                </td>
-                            </tr>
-                        @endif
-                    @empty
-                        @if(count($rows) === 0)
-                            <tr>
-                                <td colspan="7" class="empty">No fuel stock found.</td>
-                            </tr>
-                        @endif
-                    @endforelse
-
-                    @foreach($rows as $index => $row)
+            <tbody>
+                @forelse($this->fuelStocks as $stock)
+                    @if($editingId === $stock->id)
                         <tr class="new-row">
-                            <td class="row-no">
-                                <button type="button"
-                                        wire:click="removeRow({{ $index }})"
-                                        class="plus-cell danger-plus"
-                                        title="Remove row">
-                                    ×
-                                </button>
+                            <td class="row-no">{{ $loop->iteration }}</td>
+
+                            <td>
+                                <input type="number"
+                                       step="0.01"
+                                       wire:model.live="editRow.current_stock"
+                                       placeholder="0">
+                                @error('editRow.current_stock')
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
                             </td>
 
                             <td>
-                                <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.opening_stock" placeholder="0">
-                                @error("rows.$index.opening_stock") <small class="error">{{ $message }}</small> @enderror
-                            </td>
-
-                            <td>
-                                <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.current_stock" placeholder="0">
-                                @error("rows.$index.current_stock") <small class="error">{{ $message }}</small> @enderror
-                            </td>
-
-                            <td>
-                                <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.total_stock_in" placeholder="0">
-                                @error("rows.$index.total_stock_in") <small class="error">{{ $message }}</small> @enderror
-                            </td>
-
-                            <td>
-                                <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.total_stock_out" placeholder="0">
-                                @error("rows.$index.total_stock_out") <small class="error">{{ $message }}</small> @enderror
-                            </td>
-
-                            <td>
-                                <select wire:model.live="rows.{{ $index }}.status">
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
+                                <select wire:model.live="editRow.status">
+                                    <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
+                                    <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
                                 </select>
-                                @error("rows.$index.status") <small class="error">{{ $message }}</small> @enderror
+                                @error('editRow.status')
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
                             </td>
 
                             <td>
                                 <div class="table-actions">
-                                    <button type="button" wire:click="saveRow({{ $index }})" class="mini">Save</button>
-                                    <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">Remove</button>
+                                    <button type="button" wire:click="updateRow" class="mini">
+                                        {{ __('pages.save') ?? 'Save' }}
+                                    </button>
+
+                                    <button type="button" wire:click="cancelEdit" class="mini danger">
+                                        {{ __('pages.cancel') ?? 'Cancel' }}
+                                    </button>
                                 </div>
                             </td>
                         </tr>
-                    @endforeach
-                </tbody>
+                    @else
+                        <tr>
+                            <td class="row-no">{{ $loop->iteration }}</td>
 
-                <tfoot>
-                    <tr class="total-row">
-                        <td>
-                            @if(auth()->user()->hasPermission('stock_fuel.create'))
-                                <button type="button" wire:click="addRow" class="plus-cell" title="Add row">+</button>
-                            @else
-                                -
-                            @endif
+                            <td class="green-number">
+                                {{ number_format((float) $stock->current_stock, 2) }} L
+                            </td>
+
+                            <td>
+                                <span class="status {{ $stock->status }}">
+                                    {{ $stock->status === 'active'
+                                        ? (__('pages.active') ?? 'Active')
+                                        : (__('pages.inactive') ?? 'Inactive') }}
+                                </span>
+                            </td>
+
+                            <td>
+                                <div class="table-actions">
+                                    @if(auth()->user()->hasPermission('stock_fuel.edit'))
+                                        <button type="button"
+                                                wire:click="edit({{ $stock->id }})"
+                                                class="mini">
+                                            {{ __('pages.edit') ?? 'Edit' }}
+                                        </button>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @endif
+                @empty
+                    @if(count($rows) === 0)
+                        <tr>
+                            <td colspan="4" class="empty">
+                                {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
+                            </td>
+                        </tr>
+                    @endif
+                @endforelse
+
+                @foreach($rows as $index => $row)
+                    <tr class="new-row">
+                        <td class="row-no">
+                            <button type="button"
+                                    wire:click="removeRow({{ $index }})"
+                                    class="plus-cell danger-plus"
+                                    title="Remove row">
+                                ×
+                            </button>
                         </td>
 
-                        <td class="total-label">Total</td>
-                        <td>{{ number_format((float) $this->totalCurrentStock, 2) }} L</td>
-                        <td class="green-number">{{ number_format((float) $this->totalStockIn, 2) }} L</td>
-                        <td class="red-number">{{ number_format((float) $this->totalStockOut, 2) }} L</td>
-                        <td>-</td>
-                        <td>-</td>
+                        <td>
+                            <input type="number"
+                                   step="0.01"
+                                   wire:model.live="rows.{{ $index }}.current_stock"
+                                   placeholder="0">
+                            @error("rows.$index.current_stock")
+                                <small class="error">{{ $message }}</small>
+                            @enderror
+                        </td>
+
+                        <td>
+                            <select wire:model.live="rows.{{ $index }}.status">
+                                <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
+                                <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
+                            </select>
+                            @error("rows.$index.status")
+                                <small class="error">{{ $message }}</small>
+                            @enderror
+                        </td>
+
+                        <td>
+                            <div class="table-actions">
+                                <button type="button" wire:click="saveRow({{ $index }})" class="mini">
+                                    {{ __('pages.save') ?? 'Save' }}
+                                </button>
+
+                                <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">
+                                    {{ __('pages.remove') ?? 'Remove' }}
+                                </button>
+                            </div>
+                        </td>
                     </tr>
-                </tfoot>
-            </table>
-        </div>
+                @endforeach
+            </tbody>
+
+            <tfoot>
+                <tr class="total-row">
+                    <td>
+                        @if(auth()->user()->hasPermission('stock_fuel.create'))
+                            <button type="button" wire:click="addRow" class="plus-cell" title="Add fuel">+</button>
+                        @else
+                            -
+                        @endif
+                    </td>
+
+                    <td class="green-number">
+                        {{ number_format((float) $this->totalCurrentStock, 2) }} L
+                    </td>
+                    <td>-</td>
+                    <td>-</td>
+                </tr>
+            </tfoot>
+        </table>
     </div>
+</div>
 </div>

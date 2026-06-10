@@ -465,7 +465,7 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Block Register</h1>
+            <h1 class="page-title">{{ __('pages.block_register') }}</h1>
             <p class="page-subtitle">Track variety, planting date, cycle type, and harvest date by block.</p>
         </div>
 

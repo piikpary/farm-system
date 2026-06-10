@@ -348,8 +348,8 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Task Categories</h1>
-            <p class="page-subtitle">Manage farm work type and fuel standard.</p>
+            <h1 class="page-title">{{ __('pages.task_categories') }}</h1>
+            
         </div>
 
         <div class="page-actions">

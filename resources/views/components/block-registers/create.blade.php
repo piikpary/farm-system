@@ -106,7 +106,7 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Add Block Register</h1>
+            <h1 class="page-title">{{ __('pages.add_block_register') }}</h1>
             <p class="page-subtitle">Excel-style block planting register.</p>
         </div>
 

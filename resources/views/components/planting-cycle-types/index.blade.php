@@ -338,8 +338,8 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Planting Cycle Types</h1>
-            <p class="page-subtitle">Manage crop planting cycle master data.</p>
+            <h1 class="page-title">{{ __('pages.planting_cycle_types') }}</h1>
+            
         </div>
 
         <div class="page-actions">

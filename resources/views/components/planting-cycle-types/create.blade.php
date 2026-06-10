@@ -93,7 +93,7 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Add Planting Cycle Types</h1>
+            <h1 class="page-title">{{ __('pages.add_planting_cycle_type') }}</h1>
             <p class="page-subtitle">Create cycle types such as PC, R1, R2, R3, RP.</p>
         </div>
 

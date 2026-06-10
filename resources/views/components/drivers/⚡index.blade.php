@@ -238,7 +238,7 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Drivers</h1>
+            <h1 class="page-title">{{ __('pages.drivers') }}</h1>
             <p class="page-subtitle">List of tractor drivers.</p>
         </div>
 
@@ -397,7 +397,7 @@ new class extends Component
                             @endif
                         </td>
 
-                        <td colspan="4" class="total-label">Total Drivers</td>
+                        <td colspan="4" class="total-label">{{ __('pages.total_drivers') }}</td>
                         <td>{{ number_format((int) $this->totalDrivers) }}</td>
                         <td>-</td>
                     </tr>

@@ -506,7 +506,7 @@ new class extends Component
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        $sheet->setTitle('Farm Work Plans');
+        $sheet->setTitle(__('pages.farm_work_plans'));
 
         $headers = [
             'A1' => trans()->has('pages.title') ? __('pages.title') : 'Title',

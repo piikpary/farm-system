@@ -542,4 +542,17 @@ return [
 'work_plan_saved' => 'រក្សាទុកផែនការការងារបានជោគជ័យ។',
 'work_plan_updated' => 'កែប្រែផែនការការងារបានជោគជ័យ។',
 'work_plan_deleted' => 'លុបផែនការការងារបានជោគជ័យ។',
+'block_register' => 'បញ្ជីប្លុកដាំដុះ',
+'block_register_subtitle' => 'តាមដានពូជ ថ្ងៃដាំ ប្រភេទវដ្ត និងថ្ងៃប្រមូលផលតាមប្លុក។',
+'add_block_register' => 'បន្ថែមបញ្ជីប្លុកដាំដុះ',
+'edit_block_register' => 'កែប្រែបញ្ជីប្លុកដាំដុះ',
+
+'zone_blocks' => 'ប្លុកតំបន់',
+'zone_blocks_subtitle' => 'គ្រប់គ្រងតំបន់រង / ប្លុកកសិដ្ឋាន និងព្រំដែន GPS។',
+
+'planting_cycle_types' => 'ប្រភេទវដ្តដាំដុះ',
+'planting_cycle_types_subtitle' => 'គ្រប់គ្រងទិន្នន័យមេប្រភេទវដ្តដាំដុះ។',
+'add_planting_cycle_type' => 'បន្ថែមប្រភេទវដ្តដាំដុះ',
+
+'total_drivers' => 'អ្នកបើកបរសរុប',
 ];

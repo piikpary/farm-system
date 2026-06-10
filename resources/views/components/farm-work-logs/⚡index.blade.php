@@ -700,7 +700,7 @@ new class extends Component
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Farm Work Logs');
+        $sheet->setTitle(__('pages.farm_work_logs'));
 
         $headers = [
             'A1' => '#',
@@ -949,7 +949,7 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Farm Work Logs</h1>
+            <h1 class="page-title">{{ __('pages.farm_work_logs') }}</h1>
             <p class="page-subtitle">Daily tractor work, area, fuel, and productivity records.</p>
         </div>
 
@@ -996,7 +996,7 @@ new class extends Component
             <div>
                 <label>Tractor</label>
                 <select wire:model.live="tractorId">
-                    <option value="">All Tractors</option>
+                    <option value="">{{ __('pages.all_tractors') }}</option>
                     @foreach($tractors as $tractor)
                         <option value="{{ $tractor->id }}">{{ $tractor->tractor_no }} {{ $tractor->name ? '- ' . $tractor->name : '' }}</option>
                     @endforeach
@@ -1006,7 +1006,7 @@ new class extends Component
             <div>
                 <label>Driver</label>
                 <select wire:model.live="driverId">
-                    <option value="">All Drivers</option>
+                    <option value="">{{ __('pages.all_drivers') }}</option>
                     @foreach($drivers as $driver)
                         <option value="{{ $driver->id }}">{{ $driver->name }}</option>
                     @endforeach
@@ -1016,7 +1016,7 @@ new class extends Component
             <div>
                 <label>Zone</label>
                 <select wire:model.live="zoneId">
-                    <option value="">All Zones</option>
+                    <option value="">{{ __('pages.all_zones') }}</option>
                     @foreach($zones as $zone)
                         <option value="{{ $zone->id }}">{{ $zone->zone_code }} {{ $zone->name ? '- ' . $zone->name : '' }}</option>
                     @endforeach

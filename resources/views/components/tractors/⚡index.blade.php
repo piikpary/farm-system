@@ -259,8 +259,8 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Tractors</h1>
-            <p class="page-subtitle">Manage tractor and machine information.</p>
+            <h1 class="page-title">{{ __('pages.tractors') }}</h1>
+            
         </div>
 
         <div class="page-actions">

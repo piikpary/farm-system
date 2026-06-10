@@ -527,8 +527,8 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">Zone Blocks</h1>
-            <p class="page-subtitle">Manage sub zones / farm blocks and GPS boundaries.</p>
+            <h1 class="page-title">{{ __('pages.zone_blocks') }}</h1>
+            
         </div>
 
         <div class="page-actions">

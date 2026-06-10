@@ -560,4 +560,17 @@ return [
 'work_plan_updated' => 'Work plan updated successfully.',
 'work_plan_deleted' => 'Work plan deleted successfully.',
 'title' => 'Title',
+'block_register' => 'Block Register',
+'block_register_subtitle' => 'Track variety, planting date, cycle type, and harvested date by block.',
+'add_block_register' => 'Add Block Register',
+'edit_block_register' => 'Edit Block Register',
+
+'zone_blocks' => 'Zone Blocks',
+'zone_blocks_subtitle' => 'Manage sub zones / farm blocks and GPS boundaries.',
+
+'planting_cycle_types' => 'Planting Cycle Types',
+'planting_cycle_types_subtitle' => 'Manage crop planting cycle master data.',
+'add_planting_cycle_type' => 'Add Planting Cycle Type',
+
+'total_drivers' => 'Total Drivers',
 ];
