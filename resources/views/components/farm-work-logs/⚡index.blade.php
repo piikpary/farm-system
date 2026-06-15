@@ -267,36 +267,50 @@ new class extends Component
     }
 
     private function getActiveFuelStock()
-    {
-        return FuelStock::where('status', 'active')
-            ->orderByDesc('id')
-            ->lockForUpdate()
-            ->first();
+{
+    return FuelStock::where('status', 'active')
+        ->where('current_stock', '>', 0)
+        ->orderBy('id')
+        ->lockForUpdate()
+        ->first();
+}
+
+private function deductFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
+{
+    $amount = (float) $amount;
+
+    if ($amount <= 0) {
+        return;
     }
 
-    private function deductFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
-    {
-        $amount = (float) $amount;
+    $totalAvailable = FuelStock::where('status', 'active')
+        ->where('current_stock', '>', 0)
+        ->sum('current_stock');
 
-        if ($amount <= 0) {
-            return;
+    if ((float) $totalAvailable < $amount) {
+        throw new \Exception('Not enough fuel stock. Current stock: ' . number_format((float) $totalAvailable, 2) . ' L');
+    }
+
+    $remainingAmount = $amount;
+
+    $fuelStocks = FuelStock::where('status', 'active')
+        ->where('current_stock', '>', 0)
+        ->orderBy('id') // FIFO: first stock in, first stock out
+        ->lockForUpdate()
+        ->get();
+
+    foreach ($fuelStocks as $fuelStock) {
+        if ($remainingAmount <= 0) {
+            break;
         }
 
-        $fuelStock = $this->getActiveFuelStock();
-
-        if (!$fuelStock) {
-            throw new \Exception('No active fuel stock found. Please create fuel stock first.');
-        }
-
-        if ((float) $fuelStock->current_stock < $amount) {
-            throw new \Exception('Not enough fuel stock. Current stock: ' . number_format((float) $fuelStock->current_stock, 2) . ' L');
-        }
-
-        $newBalance = (float) $fuelStock->current_stock - $amount;
+        $currentStock = (float) $fuelStock->current_stock;
+        $deductAmount = min($currentStock, $remainingAmount);
+        $newBalance = $currentStock - $deductAmount;
 
         $fuelStock->update([
             'current_stock' => $newBalance,
-            'total_stock_out' => (float) $fuelStock->total_stock_out + $amount,
+            'total_stock_out' => (float) $fuelStock->total_stock_out + $deductAmount,
             'updated_by' => Auth::id(),
         ]);
 
@@ -305,35 +319,77 @@ new class extends Component
             'tractor_id' => $tractorId,
             'farm_work_log_id' => $workLogId,
             'type' => 'refill_to_tractor',
-            'quantity' => $amount,
+            'quantity' => $deductAmount,
             'balance_after' => $newBalance,
-            'reference_no' => 'WORKLOG-' . $workLogId,
+            'reference_no' => 'WORKLOG-' . $workLogId . '-STOCK-' . $fuelStock->id . '-' . now()->format('YmdHis'),
             'transaction_date' => $date ?: now()->toDateString(),
             'created_by' => Auth::id(),
             'updated_by' => Auth::id(),
-            'note' => 'Fuel deducted from work log #' . $workLogId,
+            'note' => 'Fuel deducted by FIFO from work log #' . $workLogId,
         ]);
+
+        $remainingAmount -= $deductAmount;
+    }
+}
+
+private function returnFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
+{
+    $amount = (float) $amount;
+
+    if ($amount <= 0) {
+        return;
     }
 
-    private function returnFuelStock($amount, $tractorId = null, $workLogId = null, $date = null)
-    {
-        $amount = (float) $amount;
+    $remainingAmount = $amount;
 
-        if ($amount <= 0) {
-            return;
+    /*
+     * Return fuel back to the same stock batches that were deducted.
+     * We return in reverse order of deduction to keep FIFO balance clean.
+     */
+    $returnedByStock = FuelTransaction::where('farm_work_log_id', $workLogId)
+        ->where('type', 'adjustment')
+        ->where('reference_no', 'like', 'RETURN-WORKLOG-' . $workLogId . '%')
+        ->selectRaw('fuel_stock_id, SUM(quantity) as total_returned')
+        ->groupBy('fuel_stock_id')
+        ->pluck('total_returned', 'fuel_stock_id')
+        ->map(fn ($value) => (float) $value)
+        ->toArray();
+
+    $deductTransactions = FuelTransaction::where('farm_work_log_id', $workLogId)
+        ->where('type', 'refill_to_tractor')
+        ->orderByDesc('id')
+        ->get();
+
+    foreach ($deductTransactions as $transaction) {
+        if ($remainingAmount <= 0) {
+            break;
         }
 
-        $fuelStock = $this->getActiveFuelStock();
+        $stockId = $transaction->fuel_stock_id;
+        $deductedQty = (float) $transaction->quantity;
+        $alreadyReturned = (float) ($returnedByStock[$stockId] ?? 0);
+
+        if ($alreadyReturned >= $deductedQty) {
+            $returnedByStock[$stockId] = $alreadyReturned - $deductedQty;
+            continue;
+        }
+
+        $availableToReturn = $deductedQty - $alreadyReturned;
+        $returnAmount = min($availableToReturn, $remainingAmount);
+
+        $fuelStock = FuelStock::where('id', $stockId)
+            ->lockForUpdate()
+            ->first();
 
         if (!$fuelStock) {
-            throw new \Exception('No active fuel stock found. Please create fuel stock first.');
+            continue;
         }
 
-        $newBalance = (float) $fuelStock->current_stock + $amount;
+        $newBalance = (float) $fuelStock->current_stock + $returnAmount;
 
         $fuelStock->update([
             'current_stock' => $newBalance,
-            'total_stock_out' => max(((float) $fuelStock->total_stock_out - $amount), 0),
+            'total_stock_out' => max(((float) $fuelStock->total_stock_out - $returnAmount), 0),
             'updated_by' => Auth::id(),
         ]);
 
@@ -342,15 +398,54 @@ new class extends Component
             'tractor_id' => $tractorId,
             'farm_work_log_id' => $workLogId,
             'type' => 'adjustment',
-            'quantity' => $amount,
+            'quantity' => $returnAmount,
             'balance_after' => $newBalance,
-            'reference_no' => 'RETURN-WORKLOG-' . $workLogId . '-' . now()->format('YmdHis'),
+            'reference_no' => 'RETURN-WORKLOG-' . $workLogId . '-STOCK-' . $fuelStock->id . '-' . now()->format('YmdHis'),
             'transaction_date' => $date ?: now()->toDateString(),
             'created_by' => Auth::id(),
             'updated_by' => Auth::id(),
-            'note' => 'Fuel returned from work log #' . $workLogId,
+            'note' => 'Fuel returned to FIFO stock from work log #' . $workLogId,
+        ]);
+
+        $remainingAmount -= $returnAmount;
+    }
+
+    /*
+     * Fallback for old work logs that may not have FIFO transaction history.
+     */
+    if ($remainingAmount > 0) {
+        $fuelStock = FuelStock::where('status', 'active')
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
+
+        if (!$fuelStock) {
+            throw new \Exception('No active fuel stock found. Please create fuel stock first.');
+        }
+
+        $newBalance = (float) $fuelStock->current_stock + $remainingAmount;
+
+        $fuelStock->update([
+            'current_stock' => $newBalance,
+            'total_stock_out' => max(((float) $fuelStock->total_stock_out - $remainingAmount), 0),
+            'updated_by' => Auth::id(),
+        ]);
+
+        FuelTransaction::create([
+            'fuel_stock_id' => $fuelStock->id,
+            'tractor_id' => $tractorId,
+            'farm_work_log_id' => $workLogId,
+            'type' => 'adjustment',
+            'quantity' => $remainingAmount,
+            'balance_after' => $newBalance,
+            'reference_no' => 'RETURN-WORKLOG-' . $workLogId . '-FALLBACK-' . now()->format('YmdHis'),
+            'transaction_date' => $date ?: now()->toDateString(),
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+            'note' => 'Fuel returned from old work log history #' . $workLogId,
         ]);
     }
+}
 
     public function saveRow($index)
     {

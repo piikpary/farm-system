@@ -573,4 +573,8 @@ return [
 'add_planting_cycle_type' => 'Add Planting Cycle Type',
 
 'total_drivers' => 'Total Drivers',
+'purchase_price' => 'Purchase Price',
+'total_added' => 'Total Added',
+'total_used' => 'Total Used',
+'plan_use_fuel_l' => 'Plan Use Fuel (L)',
 ];

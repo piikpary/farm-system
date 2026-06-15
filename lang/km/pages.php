@@ -555,4 +555,8 @@ return [
 'add_planting_cycle_type' => 'បន្ថែមប្រភេទវដ្តដាំដុះ',
 
 'total_drivers' => 'អ្នកបើកបរសរុប',
+'purchase_price' => 'តម្លៃទិញ',
+'total_added' => 'ប្រេងបានបន្ថែមសរុប',
+'total_used' => 'ប្រេងបានប្រើសរុប',
+'plan_use_fuel_l' => 'ប្រេងតាមផែនការប្រើប្រាស់ (លីត្រ)',
 ];

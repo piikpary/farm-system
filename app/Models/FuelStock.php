@@ -14,12 +14,14 @@ class FuelStock extends Model
         'status',
         'created_by',
         'updated_by',
+        'purchase_price',
     ];
 
     protected $casts = [
         'opening_stock' => 'decimal:2',
         'current_stock' => 'decimal:2',
         'minimum_stock_alert' => 'decimal:2',
+        'purchase_price' => 'decimal:2',
     ];
 
     public function transactions()

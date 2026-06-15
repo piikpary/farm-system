@@ -16,6 +16,7 @@ new class extends Component
     public $editRow = [
         'opening_stock' => '',
         'current_stock' => '',
+        'purchase_price' => '',
         'total_stock_in' => '',
         'total_stock_out' => '',
         'status' => 'active',
@@ -31,6 +32,7 @@ new class extends Component
         return [
             'opening_stock' => '',
             'current_stock' => '',
+            'purchase_price' => '',
             'total_stock_in' => '',
             'total_stock_out' => '',
             'status' => 'active',
@@ -60,6 +62,7 @@ new class extends Component
         $this->validate([
             "rows.$index.opening_stock" => 'nullable|numeric|min:0',
             "rows.$index.current_stock" => 'nullable|numeric|min:0',
+            "rows.$index.purchase_price" => 'nullable|numeric|min:0',
             "rows.$index.total_stock_in" => 'nullable|numeric|min:0',
             "rows.$index.total_stock_out" => 'nullable|numeric|min:0',
             "rows.$index.status" => 'required|in:active,inactive',
@@ -71,6 +74,7 @@ new class extends Component
             DB::transaction(function () use ($row) {
                 $openingStock = (float) ($row['opening_stock'] ?: 0);
                 $currentStock = (float) ($row['current_stock'] ?: 0);
+                $purchasePrice = (float) ($row['purchase_price'] ?: 0);
                 $totalStockIn = (float) ($row['total_stock_in'] ?: 0);
                 $totalStockOut = (float) ($row['total_stock_out'] ?: 0);
 
@@ -85,6 +89,7 @@ new class extends Component
                 $fuelStock = FuelStock::create([
                     'opening_stock' => $openingStock,
                     'current_stock' => $currentStock,
+                    'purchase_price' => $purchasePrice,
                     'total_stock_in' => $totalStockIn,
                     'total_stock_out' => $totalStockOut,
                     'status' => $row['status'],
@@ -131,6 +136,7 @@ new class extends Component
         $this->editRow = [
             'opening_stock' => $fuelStock->opening_stock,
             'current_stock' => $fuelStock->current_stock,
+            'purchase_price' => $fuelStock->purchase_price,
             'total_stock_in' => $fuelStock->total_stock_in,
             'total_stock_out' => $fuelStock->total_stock_out,
             'status' => $fuelStock->status,
@@ -144,6 +150,7 @@ new class extends Component
         $this->editRow = [
             'opening_stock' => '',
             'current_stock' => '',
+            'purchase_price' => '',
             'total_stock_in' => '',
             'total_stock_out' => '',
             'status' => 'active',
@@ -159,6 +166,7 @@ new class extends Component
         $this->validate([
             'editRow.opening_stock' => 'nullable|numeric|min:0',
             'editRow.current_stock' => 'nullable|numeric|min:0',
+            'editRow.purchase_price' => 'nullable|numeric|min:0',
             'editRow.total_stock_in' => 'nullable|numeric|min:0',
             'editRow.total_stock_out' => 'nullable|numeric|min:0',
             'editRow.status' => 'required|in:active,inactive',
@@ -172,12 +180,14 @@ new class extends Component
 
                 $newOpeningStock = (float) ($this->editRow['opening_stock'] ?: 0);
                 $newCurrentStock = (float) ($this->editRow['current_stock'] ?: 0);
+                $newPurchasePrice = (float) ($this->editRow['purchase_price'] ?: 0);
                 $newTotalStockIn = (float) ($this->editRow['total_stock_in'] ?: 0);
                 $newTotalStockOut = (float) ($this->editRow['total_stock_out'] ?: 0);
 
                 $fuelStock->update([
                     'opening_stock' => $newOpeningStock,
                     'current_stock' => $newCurrentStock,
+                    'purchase_price' => $newPurchasePrice,
                     'total_stock_in' => $newTotalStockIn,
                     'total_stock_out' => $newTotalStockOut,
                     'status' => $this->editRow['status'],
@@ -232,6 +242,7 @@ new class extends Component
                     $query->where('status', 'like', '%' . $this->search . '%')
                         ->orWhere('opening_stock', 'like', '%' . $this->search . '%')
                         ->orWhere('current_stock', 'like', '%' . $this->search . '%')
+                        ->orWhere('purchase_price', 'like', '%' . $this->search . '%')
                         ->orWhere('total_stock_in', 'like', '%' . $this->search . '%')
                         ->orWhere('total_stock_out', 'like', '%' . $this->search . '%');
                 });
@@ -290,72 +301,73 @@ new class extends Component
         .green-number { color:#166534; font-weight:900; }
         .red-number { color:#dc2626; font-weight:900; }
         .error { display:block; color:#dc2626; font-size:12px; margin-top:4px; font-weight:700; }
+
         .fuel-simple-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 18px;
-}
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 18px;
+        }
 
-.fuel-main-card,
-.fuel-small-card {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 18px;
-    padding: 18px;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-}
+        .fuel-main-card,
+        .fuel-small-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        }
 
-.fuel-main-card {
-    background: linear-gradient(135deg, #f0fdf4, #ffffff);
-}
+        .fuel-main-card {
+            background: linear-gradient(135deg, #f0fdf4, #ffffff);
+        }
 
-.fuel-card-label {
-    font-size: 13px;
-    font-weight: 900;
-    color: #64748b;
-    margin-bottom: 8px;
-}
+        .fuel-card-label {
+            font-size: 13px;
+            font-weight: 900;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
 
-.fuel-card-value {
-    font-size: 36px;
-    line-height: 1;
-    font-weight: 900;
-    color: #166534;
-    margin-bottom: 10px;
-}
+        .fuel-card-value {
+            font-size: 36px;
+            line-height: 1;
+            font-weight: 900;
+            color: #166534;
+            margin-bottom: 10px;
+        }
 
-.fuel-small-value {
-    font-size: 22px;
-    font-weight: 900;
-    color: #0f172a;
-}
+        .fuel-small-value {
+            font-size: 22px;
+            font-weight: 900;
+            color: #0f172a;
+        }
 
-.fuel-card-note {
-    color: #64748b;
-    font-size: 13px;
-    font-weight: 700;
-}
+        .fuel-card-note {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+        }
 
-.simple-stock-table .master-table {
-    min-width: 650px;
-}
+        .simple-stock-table .master-table {
+            min-width: 760px;
+        }
 
-@media (max-width: 1100px) {
-    .fuel-simple-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-}
+        @media (max-width: 1100px) {
+            .fuel-simple-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
 
-@media (max-width: 640px) {
-    .fuel-simple-grid {
-        grid-template-columns: 1fr;
-    }
+        @media (max-width: 640px) {
+            .fuel-simple-grid {
+                grid-template-columns: 1fr;
+            }
 
-    .fuel-card-value {
-        font-size: 30px;
-    }
-}
+            .fuel-card-value {
+                font-size: 30px;
+            }
+        }
     </style>
 
     <div class="page-header">
@@ -366,200 +378,224 @@ new class extends Component
 
         <div class="page-actions">
             <a href="{{ route('stock-fuel.history') }}" class="btn gray">
-                Fuel History
+                {{ __('pages.fuel_history') ?? 'Fuel History' }}
             </a>
         </div>
     </div>
 
     <div class="panel">
-    <div class="master-toolbar">
-        <div class="filter-box">
-            <input type="text"
-                   wire:model.live="search"
-                   placeholder="{{ __('pages.search') ?? 'Search' }}">
-        </div>
-    </div>
-
-    <div class="fuel-simple-grid">
-        <div class="fuel-main-card">
-            <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
-            <div class="fuel-card-value">
-                {{ number_format((float) $this->totalCurrentStock, 2) }} L
-            </div>
-            <div class="fuel-card-note">
-                {{ __('pages.stock_fuel_subtitle') }}
+        <div class="master-toolbar">
+            <div class="filter-box">
+                <input type="text"
+                       wire:model.live="search"
+                       placeholder="{{ __('pages.search') ?? 'Search' }}">
             </div>
         </div>
 
-        
+        <div class="fuel-simple-grid">
+            <div class="fuel-main-card">
+                <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
+                <div class="fuel-card-value">
+                    {{ number_format((float) $this->totalCurrentStock, 2) }} L
+                </div>
+                <div class="fuel-card-note">
+                    {{ __('pages.stock_fuel_subtitle') }}
+                </div>
+            </div>
 
-        <div class="fuel-small-card">
-            <div class="fuel-card-label">{{ __('pages.total_stock_in') ?? 'Total Added' }}</div>
-            <div class="fuel-small-value green-number">
-                {{ number_format((float) $this->totalStockIn, 2) }} L
+            <div class="fuel-small-card">
+                <div class="fuel-card-label">{{ __('pages.total_stock_in') ?? 'Total Added' }}</div>
+                <div class="fuel-small-value green-number">
+                    {{ number_format((float) $this->totalStockIn, 2) }} L
+                </div>
+            </div>
+
+            <div class="fuel-small-card">
+                <div class="fuel-card-label">{{ __('pages.total_stock_out') ?? 'Total Used' }}</div>
+                <div class="fuel-small-value red-number">
+                    {{ number_format((float) $this->totalStockOut, 2) }} L
+                </div>
             </div>
         </div>
 
-        <div class="fuel-small-card">
-            <div class="fuel-card-label">{{ __('pages.total_stock_out') ?? 'Total Used' }}</div>
-            <div class="fuel-small-value red-number">
-                {{ number_format((float) $this->totalStockOut, 2) }} L
-            </div>
-        </div>
-    </div>
+        <div class="master-table-wrap simple-stock-table">
+            <table class="master-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
+                        <th>{{ __('pages.purchase_price') ?? 'Purchase Price' }}</th>
+                        <th>{{ __('pages.status') ?? 'Status' }}</th>
+                        <th width="190">{{ __('pages.action') ?? 'Action' }}</th>
+                    </tr>
+                </thead>
 
-    <div class="master-table-wrap simple-stock-table">
-        <table class="master-table">
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
-                    <th>{{ __('pages.status') ?? 'Status' }}</th>
-                    <th width="190">{{ __('pages.action') ?? 'Action' }}</th>
-                </tr>
-            </thead>
+                <tbody>
+                    @forelse($this->fuelStocks as $stock)
+                        @if($editingId === $stock->id)
+                            <tr class="new-row">
+                                <td class="row-no">{{ $loop->iteration }}</td>
 
-            <tbody>
-                @forelse($this->fuelStocks as $stock)
-                    @if($editingId === $stock->id)
+                                <td>
+                                    <input type="number"
+                                           step="0.01"
+                                           wire:model.live="editRow.current_stock"
+                                           placeholder="0">
+                                    @error('editRow.current_stock')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
+                                   <input type="number"
+                                        step="0.01"
+                                        wire:model.live="editRow.purchase_price"
+                                        placeholder="0.00">
+                                    @error('editRow.purchase_price')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
+                                    <select wire:model.live="editRow.status">
+                                        <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
+                                        <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
+                                    </select>
+                                    @error('editRow.status')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
+                                    <div class="table-actions">
+                                        <button type="button" wire:click="updateRow" class="mini">
+                                            {{ __('pages.save') ?? 'Save' }}
+                                        </button>
+
+                                        <button type="button" wire:click="cancelEdit" class="mini danger">
+                                            {{ __('pages.cancel') ?? 'Cancel' }}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @else
+                            <tr>
+                                <td class="row-no">{{ $loop->iteration }}</td>
+
+                                <td class="green-number">
+                                    {{ number_format((float) $stock->current_stock, 2) }} L
+                                </td>
+
+                                <td>
+                                    ${{ number_format((float) $stock->purchase_price, 2) }}
+                                </td>
+
+                                <td>
+                                    <span class="status {{ $stock->status }}">
+                                        {{ $stock->status === 'active'
+                                            ? (__('pages.active') ?? 'Active')
+                                            : (__('pages.inactive') ?? 'Inactive') }}
+                                    </span>
+                                </td>
+
+                                <td>
+                                    <div class="table-actions">
+                                        @if(auth()->user()->hasPermission('stock_fuel.edit'))
+                                            <button type="button"
+                                                    wire:click="edit({{ $stock->id }})"
+                                                    class="mini">
+                                                {{ __('pages.edit') ?? 'Edit' }}
+                                            </button>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
+                    @empty
+                        @if(count($rows) === 0)
+                            <tr>
+                                <td colspan="5" class="empty">
+                                    {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
+                                </td>
+                            </tr>
+                        @endif
+                    @endforelse
+
+                    @foreach($rows as $index => $row)
                         <tr class="new-row">
-                            <td class="row-no">{{ $loop->iteration }}</td>
+                            <td class="row-no">
+                                <button type="button"
+                                        wire:click="removeRow({{ $index }})"
+                                        class="plus-cell danger-plus"
+                                        title="Remove row">
+                                    ×
+                                </button>
+                            </td>
 
                             <td>
                                 <input type="number"
                                        step="0.01"
-                                       wire:model.live="editRow.current_stock"
+                                       wire:model.live="rows.{{ $index }}.current_stock"
                                        placeholder="0">
-                                @error('editRow.current_stock')
+                                @error("rows.$index.current_stock")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
 
                             <td>
-                                <select wire:model.live="editRow.status">
+                                <input type="number"
+                                    step="0.01"
+                                    wire:model.live="rows.{{ $index }}.purchase_price"
+                                    placeholder="0.00">
+                                @error("rows.$index.purchase_price")
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
+                                <select wire:model.live="rows.{{ $index }}.status">
                                     <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
                                     <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
                                 </select>
-                                @error('editRow.status')
+                                @error("rows.$index.status")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
 
                             <td>
                                 <div class="table-actions">
-                                    <button type="button" wire:click="updateRow" class="mini">
+                                    <button type="button" wire:click="saveRow({{ $index }})" class="mini">
                                         {{ __('pages.save') ?? 'Save' }}
                                     </button>
 
-                                    <button type="button" wire:click="cancelEdit" class="mini danger">
-                                        {{ __('pages.cancel') ?? 'Cancel' }}
+                                    <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">
+                                        {{ __('pages.remove') ?? 'Remove' }}
                                     </button>
                                 </div>
                             </td>
                         </tr>
-                    @else
-                        <tr>
-                            <td class="row-no">{{ $loop->iteration }}</td>
+                    @endforeach
+                </tbody>
 
-                            <td class="green-number">
-                                {{ number_format((float) $stock->current_stock, 2) }} L
-                            </td>
-
-                            <td>
-                                <span class="status {{ $stock->status }}">
-                                    {{ $stock->status === 'active'
-                                        ? (__('pages.active') ?? 'Active')
-                                        : (__('pages.inactive') ?? 'Inactive') }}
-                                </span>
-                            </td>
-
-                            <td>
-                                <div class="table-actions">
-                                    @if(auth()->user()->hasPermission('stock_fuel.edit'))
-                                        <button type="button"
-                                                wire:click="edit({{ $stock->id }})"
-                                                class="mini">
-                                            {{ __('pages.edit') ?? 'Edit' }}
-                                        </button>
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
-                    @endif
-                @empty
-                    @if(count($rows) === 0)
-                        <tr>
-                            <td colspan="4" class="empty">
-                                {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
-                            </td>
-                        </tr>
-                    @endif
-                @endforelse
-
-                @foreach($rows as $index => $row)
-                    <tr class="new-row">
-                        <td class="row-no">
-                            <button type="button"
-                                    wire:click="removeRow({{ $index }})"
-                                    class="plus-cell danger-plus"
-                                    title="Remove row">
-                                ×
-                            </button>
-                        </td>
-
+                <tfoot>
+                    <tr class="total-row">
                         <td>
-                            <input type="number"
-                                   step="0.01"
-                                   wire:model.live="rows.{{ $index }}.current_stock"
-                                   placeholder="0">
-                            @error("rows.$index.current_stock")
-                                <small class="error">{{ $message }}</small>
-                            @enderror
+                            @if(auth()->user()->hasPermission('stock_fuel.create'))
+                                <button type="button" wire:click="addRow" class="plus-cell" title="Add fuel">+</button>
+                            @else
+                                -
+                            @endif
                         </td>
 
-                        <td>
-                            <select wire:model.live="rows.{{ $index }}.status">
-                                <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
-                                <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
-                            </select>
-                            @error("rows.$index.status")
-                                <small class="error">{{ $message }}</small>
-                            @enderror
+                        <td class="green-number">
+                            {{ number_format((float) $this->totalCurrentStock, 2) }} L
                         </td>
-
-                        <td>
-                            <div class="table-actions">
-                                <button type="button" wire:click="saveRow({{ $index }})" class="mini">
-                                    {{ __('pages.save') ?? 'Save' }}
-                                </button>
-
-                                <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">
-                                    {{ __('pages.remove') ?? 'Remove' }}
-                                </button>
-                            </div>
-                        </td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
                     </tr>
-                @endforeach
-            </tbody>
-
-            <tfoot>
-                <tr class="total-row">
-                    <td>
-                        @if(auth()->user()->hasPermission('stock_fuel.create'))
-                            <button type="button" wire:click="addRow" class="plus-cell" title="Add fuel">+</button>
-                        @else
-                            -
-                        @endif
-                    </td>
-
-                    <td class="green-number">
-                        {{ number_format((float) $this->totalCurrentStock, 2) }} L
-                    </td>
-                    <td>-</td>
-                    <td>-</td>
-                </tr>
-            </tfoot>
-        </table>
+                </tfoot>
+            </table>
+        </div>
     </div>
-</div>
 </div>

@@ -43,4 +43,11 @@ class FarmWorkPlan extends Model
     {
         return $this->hasMany(FarmWorkLog::class, 'farm_work_plan_id');
     }
+    public function activities()
+{
+    return $this->hasMany(
+        \App\Models\FarmWorkPlanActivity::class,
+        'farm_work_plan_id'
+    );
+}
 }

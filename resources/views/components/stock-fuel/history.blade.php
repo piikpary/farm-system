@@ -4,7 +4,6 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\FuelTransaction;
 
-
 new class extends Component
 {
     use WithPagination;
@@ -55,7 +54,8 @@ new class extends Component
 
     <style>
         .excel-table-wrap {
-            overflow-x: auto;
+            max-height: 620px;
+            overflow: auto;
             border: 1px solid #e5e7eb;
             border-radius: 16px;
         }
@@ -68,6 +68,9 @@ new class extends Component
         }
 
         .excel-table th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
             background: #f8fafc;
             color: #0f172a;
             font-size: 12px;
@@ -176,7 +179,7 @@ new class extends Component
                         <tr>
                             <td>{{ optional($transaction->transaction_date)->format('d M Y') }}</td>
 
-                            <td>{{ $transaction->fuelStock->stock_name ?? '-' }}</td>
+                            <td>{{ $transaction->fuelStock->name ?? '-' }}</td>
 
                             <td>
                                 @if($transaction->type === 'stock_in')

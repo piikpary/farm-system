@@ -3,6 +3,7 @@
 use Livewire\Component;
 use App\Models\FarmWorkLog;
 use App\Models\FarmWorkPlan;
+use App\Models\TaskCategory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -19,108 +20,215 @@ new class extends Component
     private function buildRows()
     {
         /*
-            Correct concept:
-            Work Plan:
-            - Total Area
-            - Request Fuel L/Hec
-            - Request Fuel L
+         * Formula concept used by both the page and exports:
+         *
+         * Total Area              = Sum of plan area for this activity
+         * Finish Area             = Sum of working area from work logs
+         * Remaining Area          = MAX(Total Area - Finish Area, 0)
+         *
+         * Request Fuel L/Ha       = Request Fuel / Total Area
+         * Request Fuel            = Sum(Plan Area × Activity Fuel L/Ha)
+         * Plan Use Fuel           = Finish Area × Request Fuel L/Ha
+         *
+         * Consumed Fuel L/Ha      = Consumed Fuel / Finish Area
+         * Remaining Fuel          = Request Fuel - Consumed Fuel
+         * Remaining Fuel L/Ha     = Remaining Fuel / Remaining Area
+         *
+         * Variance Fuel           = Plan Use Fuel - Consumed Fuel
+         * Variance Fuel L/Ha      = Request Fuel L/Ha - Consumed Fuel L/Ha
+         *
+         * Hectare/Hour            = Finish Area / Total Working Hour
+         */
 
-            Work Log:
-            - Finish Area
-            - Consumed Fuel
-            - Working Hour
-        */
+        $summary = collect();
 
-        $plans = FarmWorkPlan::with('taskCategory')
-            ->when($this->from_date, fn ($q) => $q->whereDate('plan_date', '>=', $this->from_date))
-            ->when($this->to_date, fn ($q) => $q->whereDate('plan_date', '<=', $this->to_date))
-            ->get()
-            ->groupBy('task_category_id');
+        /*
+         * New Work Plan concept:
+         * one plan can contain multiple activities.
+         *
+         * Each activity receives the plan's full planned area and its own
+         * fuel-per-hectare value.
+         */
+        $plans = FarmWorkPlan::with([
+            'taskCategory',
+            'activities.taskCategory',
+        ])
+            ->when(
+                $this->from_date,
+                fn ($q) => $q->whereDate('plan_date', '>=', $this->from_date)
+            )
+            ->when(
+                $this->to_date,
+                fn ($q) => $q->whereDate('plan_date', '<=', $this->to_date)
+            )
+            ->get();
+
+        foreach ($plans as $plan) {
+            $planArea = (float) $plan->plan_area;
+
+            if ($plan->activities->isNotEmpty()) {
+                foreach ($plan->activities as $activity) {
+                    $taskCategoryId = (int) $activity->task_category_id;
+
+                    if (!$taskCategoryId) {
+                        continue;
+                    }
+
+                    $fuelPerHectare = (float) $activity->fuel_per_hectare;
+                    $requestFuel = $planArea * $fuelPerHectare;
+
+                    $current = $summary->get($taskCategoryId, [
+                        'task_category_id' => $taskCategoryId,
+                        'task_category' => optional($activity->taskCategory)->name ?? '-',
+                        'total_area' => 0,
+                        'request_fuel' => 0,
+                        'finish_area' => 0,
+                        'consumed_fuel' => 0,
+                        'total_working_hour' => 0,
+                    ]);
+
+                    $current['total_area'] += $planArea;
+                    $current['request_fuel'] += $requestFuel;
+
+                    $summary->put($taskCategoryId, $current);
+                }
+
+                continue;
+            }
+
+            /*
+             * Compatibility for old work plans created before the
+             * farm_work_plan_activities table was introduced.
+             */
+            if ($plan->task_category_id) {
+                $taskCategoryId = (int) $plan->task_category_id;
+                $requestFuel = (float) $plan->request_liters;
+
+                $current = $summary->get($taskCategoryId, [
+                    'task_category_id' => $taskCategoryId,
+                    'task_category' => optional($plan->taskCategory)->name ?? '-',
+                    'total_area' => 0,
+                    'request_fuel' => 0,
+                    'finish_area' => 0,
+                    'consumed_fuel' => 0,
+                    'total_working_hour' => 0,
+                ]);
+
+                $current['total_area'] += $planArea;
+                $current['request_fuel'] += $requestFuel;
+
+                $summary->put($taskCategoryId, $current);
+            }
+        }
 
         $logs = FarmWorkLog::with('taskCategory')
-            ->when($this->from_date, fn ($q) => $q->whereDate('work_date', '>=', $this->from_date))
-            ->when($this->to_date, fn ($q) => $q->whereDate('work_date', '<=', $this->to_date))
-            ->get()
-            ->groupBy('task_category_id');
+            ->when(
+                $this->from_date,
+                fn ($q) => $q->whereDate('work_date', '>=', $this->from_date)
+            )
+            ->when(
+                $this->to_date,
+                fn ($q) => $q->whereDate('work_date', '<=', $this->to_date)
+            )
+            ->get();
 
-        $taskCategoryIds = $plans->keys()
-            ->merge($logs->keys())
-            ->filter()
-            ->unique()
-            ->values();
+        foreach ($logs as $log) {
+            $taskCategoryId = (int) $log->task_category_id;
 
-        return $taskCategoryIds
-            ->map(function ($taskCategoryId) use ($plans, $logs) {
-                $planItems = $plans->get($taskCategoryId, collect());
-                $logItems = $logs->get($taskCategoryId, collect());
+            if (!$taskCategoryId) {
+                continue;
+            }
 
-                $firstPlan = $planItems->first();
-                $firstLog = $logItems->first();
+            $current = $summary->get($taskCategoryId, [
+                'task_category_id' => $taskCategoryId,
+                'task_category' => optional($log->taskCategory)->name ?? '-',
+                'total_area' => 0,
+                'request_fuel' => 0,
+                'finish_area' => 0,
+                'consumed_fuel' => 0,
+                'total_working_hour' => 0,
+            ]);
 
-                $taskCategoryName =
-                    optional(optional($firstPlan)->taskCategory)->name
-                    ?? optional(optional($firstLog)->taskCategory)->name
-                    ?? '-';
+            if (
+                ($current['task_category'] ?? '-') === '-' &&
+                optional($log->taskCategory)->name
+            ) {
+                $current['task_category'] = $log->taskCategory->name;
+            }
 
-                // From Work Plan
-                $totalArea = (float) $planItems->sum('plan_area');
-                $requestFuel = (float) $planItems->sum('request_liters');
+            $current['finish_area'] += (float) $log->working_area;
+            $current['consumed_fuel'] += (float) $log->diesel_consumed;
+            $current['total_working_hour'] += (float) $log->working_duration;
 
-                // Important: L/Hec is a rate, do not sum it.
-                // Correct = total request fuel / total plan area.
-               $requestFuelPerHectare = (float) $planItems->sum('request_l_per_hectare');
+            $summary->put($taskCategoryId, $current);
+        }
 
-                // From Work Log
-                $finishArea = (float) $logItems->sum('working_area');
-                $consumedFuel = (float) $logItems->sum('diesel_consumed');
-                $totalWorkingHour = (float) $logItems->sum('working_duration');
+        return $summary
+            ->map(function ($item) {
+                $totalArea = (float) $item['total_area'];
+                $finishArea = (float) $item['finish_area'];
+                $requestFuel = (float) $item['request_fuel'];
+                $consumedFuel = (float) $item['consumed_fuel'];
+                $totalWorkingHour = (float) $item['total_working_hour'];
 
-                // Calculated
                 $remainingArea = max($totalArea - $finishArea, 0);
 
+                // Weighted request rate. Never sum L/Ha rates.
+                $requestFuelPerHectare = $totalArea > 0
+                ? round($requestFuel / $totalArea, 2)
+                : 0;
+
+                $planUseFuel = $finishArea * $requestFuelPerHectare;
+
                 $consumedFuelPerHectare = $finishArea > 0
-                    ? $consumedFuel / $finishArea
-                    : 0;
+                ? round($consumedFuel / $finishArea, 2)
+                : 0;
 
                 $remainingFuel = $requestFuel - $consumedFuel;
 
-                $remainingFuelPerHectare = $totalArea > 0
-                    ? $remainingFuel / $totalArea
+                $remainingFuelPerHectare = $remainingArea > 0
+                    ? $remainingFuel / $remainingArea
                     : 0;
 
-                $varianceFuel = $consumedFuel - $requestFuel;
+                // Positive = used less than the planned fuel for finished area.
+                // Negative = over-consumed.
+                $varianceFuel = $planUseFuel - $consumedFuel;
 
-                $varianceFuelPerHectare = $totalArea > 0
-                    ? $varianceFuel / $totalArea
-                    : 0;
+                $varianceFuelPerHectare = round(
+                    $requestFuelPerHectare - $consumedFuelPerHectare,
+                    2
+                );
 
                 $hectarePerHour = $totalWorkingHour > 0
                     ? $finishArea / $totalWorkingHour
                     : 0;
 
                 return [
-                    'task_category' => $taskCategoryName,
+                    'task_category_id' => $item['task_category_id'],
+                    'task_category' => $item['task_category'],
 
-                    'total_area' => $totalArea,
-                    'finish_area' => $finishArea,
-                    'remaining_area' => $remainingArea,
+                    'total_area' => round($totalArea, 2),
+                    'finish_area' => round($finishArea, 2),
+                    'remaining_area' => round($remainingArea, 2),
 
-                    'request_fuel_per_hectare' => $requestFuelPerHectare,
-                    'request_fuel' => $requestFuel,
+                    'request_fuel_per_hectare' => round($requestFuelPerHectare, 2),
+                    'request_fuel' => round($requestFuel, 2),
+                    'plan_use_fuel' => round($planUseFuel, 2),
 
-                    'consumed_fuel' => $consumedFuel,
-                    'consumed_fuel_per_hectare' => $consumedFuelPerHectare,
+                    'consumed_fuel' => round($consumedFuel, 2),
+                    'consumed_fuel_per_hectare' => round($consumedFuelPerHectare, 2),
 
-                    'remaining_fuel' => $remainingFuel,
-                    'remaining_fuel_per_hectare' => $remainingFuelPerHectare,
+                    'remaining_fuel' => round($remainingFuel, 2),
+                    'remaining_fuel_per_hectare' => round($remainingFuelPerHectare, 2),
 
-                    'variance_fuel' => $varianceFuel,
-                    'variance_fuel_per_hectare' => $varianceFuelPerHectare,
+                    'variance_fuel' => round($varianceFuel, 2),
+                    'variance_fuel_per_hectare' => round($varianceFuelPerHectare, 2),
 
-                    'total_working_hour' => $totalWorkingHour,
-                    'hectare_per_hour' => $hectarePerHour,
+                    'total_working_hour' => round($totalWorkingHour, 2),
+                    'hectare_per_hour' => round($hectarePerHour, 2),
                 ];
             })
+            ->sortBy('task_category')
             ->values();
     }
 
@@ -140,14 +248,17 @@ new class extends Component
             'E1' => __('pages.remaining_area_hec'),
             'F1' => __('pages.request_fuel_l_hec'),
             'G1' => __('pages.request_fuel_l'),
-            'H1' => __('pages.consumed_fuel_l'),
-            'I1' => __('pages.consumed_fuel_l_hec'),
-            'J1' => __('pages.remaining_fuel_l'),
-            'K1' => __('pages.remaining_fuel_l_hec'),
-            'L1' => __('pages.variance_fuel_l'),
-            'M1' => __('pages.variance_fuel_l_hec'),
-            'N1' => __('pages.total_working_hour_hr'),
-            'O1' => __('pages.total_working_hour_hec_hr'),
+            'H1' => trans()->has('pages.plan_use_fuel_l')
+                ? __('pages.plan_use_fuel_l')
+                : 'Plan Use Fuel (L)',
+            'I1' => __('pages.consumed_fuel_l'),
+            'J1' => __('pages.consumed_fuel_l_hec'),
+            'K1' => __('pages.remaining_fuel_l'),
+            'L1' => __('pages.remaining_fuel_l_hec'),
+            'M1' => __('pages.variance_fuel_l'),
+            'N1' => __('pages.variance_fuel_l_hec'),
+            'O1' => __('pages.total_working_hour_hr'),
+            'P1' => __('pages.total_working_hour_hec_hr'),
         ];
 
         foreach ($headers as $cell => $value) {
@@ -160,42 +271,76 @@ new class extends Component
             $sheet->setCellValue('A' . $rowNumber, $index + 1);
             $sheet->setCellValue('B' . $rowNumber, $row['task_category']);
 
-            // From Work Plan
+            // Raw values from database aggregation.
             $sheet->setCellValue('C' . $rowNumber, (float) $row['total_area']);
-
-            // From Work Log
             $sheet->setCellValue('D' . $rowNumber, (float) $row['finish_area']);
 
-            // Remaining Area = Total Area - Finish Area
-            $sheet->setCellValue('E' . $rowNumber, '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)');
+            // E: Remaining Area = MAX(Total Area - Finish Area, 0)
+            $sheet->setCellValue(
+                'E' . $rowNumber,
+                '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)'
+            );
 
-            // From Work Plan
-            $sheet->setCellValue('F' . $rowNumber, (float) $row['request_fuel_per_hectare']);
+            /*
+             * F: Request Fuel L/Ha = Request Fuel / Total Area
+             * G: Request Fuel is the aggregated planned fuel.
+             */
+            $sheet->setCellValue(
+                'F' . $rowNumber,
+                '=IF(C' . $rowNumber . '>0,G' . $rowNumber . '/C' . $rowNumber . ',0)'
+            );
             $sheet->setCellValue('G' . $rowNumber, (float) $row['request_fuel']);
 
-            // From Work Log
-            $sheet->setCellValue('H' . $rowNumber, (float) $row['consumed_fuel']);
+            // H: Planned fuel for the finished area.
+            $sheet->setCellValue(
+                'H' . $rowNumber,
+                '=F' . $rowNumber . '*D' . $rowNumber
+            );
 
-            // Consumed Fuel / Hec = Consumed Fuel / Finish Area
-            $sheet->setCellValue('I' . $rowNumber, '=IF(D' . $rowNumber . '>0,H' . $rowNumber . '/D' . $rowNumber . ',0)');
+            // I: Actual consumed fuel from Work Logs.
+            $sheet->setCellValue('I' . $rowNumber, (float) $row['consumed_fuel']);
 
-            // Remaining Fuel = Request Fuel - Consumed Fuel
-            $sheet->setCellValue('J' . $rowNumber, '=G' . $rowNumber . '-H' . $rowNumber);
+            // J: Actual consumed fuel rate.
+            $sheet->setCellValue(
+                'J' . $rowNumber,
+                '=IF(D' . $rowNumber . '>0,I' . $rowNumber . '/D' . $rowNumber . ',0)'
+            );
 
-            // Remaining Fuel / Hec = Remaining Fuel / Total Area
-            $sheet->setCellValue('K' . $rowNumber, '=IF(C' . $rowNumber . '>0,J' . $rowNumber . '/C' . $rowNumber . ',0)');
+            // K: Remaining Fuel = Request Fuel - Consumed Fuel.
+            $sheet->setCellValue(
+                'K' . $rowNumber,
+                '=G' . $rowNumber . '-I' . $rowNumber
+            );
 
-            // Variance Fuel = Consumed Fuel - Request Fuel
-            $sheet->setCellValue('L' . $rowNumber, '=H' . $rowNumber . '-G' . $rowNumber);
+            // L: Remaining Fuel per remaining hectare.
+            $sheet->setCellValue(
+                'L' . $rowNumber,
+                '=IF(E' . $rowNumber . '>0,K' . $rowNumber . '/E' . $rowNumber . ',0)'
+            );
 
-            // Variance Fuel / Hec = Variance Fuel / Total Area
-            $sheet->setCellValue('M' . $rowNumber, '=IF(C' . $rowNumber . '>0,L' . $rowNumber . '/C' . $rowNumber . ',0)');
+            // M: Variance = Planned use for finished area - Actual use.
+            $sheet->setCellValue(
+                'M' . $rowNumber,
+                '=H' . $rowNumber . '-I' . $rowNumber
+            );
 
-            // From Work Log
-            $sheet->setCellValue('N' . $rowNumber, (float) $row['total_working_hour']);
+            // N: Rate variance = Planned rate - Actual rate.
+            $sheet->setCellValue(
+                'N' . $rowNumber,
+                '=ROUND(F' . $rowNumber . ',2)-ROUND(J' . $rowNumber . ',2)'
+            );
 
-            // Hec / Hr = Finish Area / Working Hour
-            $sheet->setCellValue('O' . $rowNumber, '=IF(N' . $rowNumber . '>0,D' . $rowNumber . '/N' . $rowNumber . ',0)');
+            // O: Total working hour.
+            $sheet->setCellValue(
+                'O' . $rowNumber,
+                (float) $row['total_working_hour']
+            );
+
+            // P: Hectare per hour.
+            $sheet->setCellValue(
+                'P' . $rowNumber,
+                '=IF(O' . $rowNumber . '>0,D' . $rowNumber . '/O' . $rowNumber . ',0)'
+            );
 
             $rowNumber++;
         }
@@ -207,47 +352,167 @@ new class extends Component
 
             $sheet->setCellValue('C' . $rowNumber, '=SUM(C2:C' . $lastDataRow . ')');
             $sheet->setCellValue('D' . $rowNumber, '=SUM(D2:D' . $lastDataRow . ')');
-            $sheet->setCellValue('E' . $rowNumber, '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)');
+            $sheet->setCellValue(
+                'E' . $rowNumber,
+                '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)'
+            );
 
-            // Important: total Request Fuel L/Hec = total Request Fuel / total Area
-            $sheet->setCellValue('F' . $rowNumber, '=SUM(F2:F' . $lastDataRow . ')');
+            // Weighted total request rate, not SUM(F).
+            $sheet->setCellValue(
+                'F' . $rowNumber,
+                '=IF(C' . $rowNumber . '>0,G' . $rowNumber . '/C' . $rowNumber . ',0)'
+            );
 
             $sheet->setCellValue('G' . $rowNumber, '=SUM(G2:G' . $lastDataRow . ')');
             $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
+            $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
 
-            $sheet->setCellValue('I' . $rowNumber, '=IF(D' . $rowNumber . '>0,H' . $rowNumber . '/D' . $rowNumber . ',0)');
-            $sheet->setCellValue('J' . $rowNumber, '=G' . $rowNumber . '-H' . $rowNumber);
-            $sheet->setCellValue('K' . $rowNumber, '=IF(C' . $rowNumber . '>0,J' . $rowNumber . '/C' . $rowNumber . ',0)');
-            $sheet->setCellValue('L' . $rowNumber, '=H' . $rowNumber . '-G' . $rowNumber);
-            $sheet->setCellValue('M' . $rowNumber, '=IF(C' . $rowNumber . '>0,L' . $rowNumber . '/C' . $rowNumber . ',0)');
-            $sheet->setCellValue('N' . $rowNumber, '=SUM(N2:N' . $lastDataRow . ')');
-            $sheet->setCellValue('O' . $rowNumber, '=IF(N' . $rowNumber . '>0,D' . $rowNumber . '/N' . $rowNumber . ',0)');
+            $sheet->setCellValue(
+                'J' . $rowNumber,
+                '=IF(D' . $rowNumber . '>0,I' . $rowNumber . '/D' . $rowNumber . ',0)'
+            );
+
+            $sheet->setCellValue(
+                'K' . $rowNumber,
+                '=G' . $rowNumber . '-I' . $rowNumber
+            );
+
+            $sheet->setCellValue(
+                'L' . $rowNumber,
+                '=IF(E' . $rowNumber . '>0,K' . $rowNumber . '/E' . $rowNumber . ',0)'
+            );
+
+            $sheet->setCellValue(
+                'M' . $rowNumber,
+                '=H' . $rowNumber . '-I' . $rowNumber
+            );
+
+            $sheet->setCellValue(
+                'N' . $rowNumber,
+                '=ROUND(F' . $rowNumber . ',2)-ROUND(J' . $rowNumber . ',2)'
+            );
+
+            $sheet->setCellValue('O' . $rowNumber, '=SUM(O2:O' . $lastDataRow . ')');
+
+            $sheet->setCellValue(
+                'P' . $rowNumber,
+                '=IF(O' . $rowNumber . '>0,D' . $rowNumber . '/O' . $rowNumber . ',0)'
+            );
         }
 
         $highestRow = $sheet->getHighestRow();
 
-        $sheet->getStyle('A1:O1')->getFont()->setBold(true);
-        $sheet->getStyle('A' . $highestRow . ':O' . $highestRow)->getFont()->setBold(true);
+        $sheet->getStyle('A1:P1')->getFont()->setBold(true);
+        $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)
+            ->getFont()
+            ->setBold(true);
 
-        $sheet->getStyle('C2:O' . $highestRow)
+        $sheet->getStyle('A1:P1')
+            ->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()
+            ->setARGB('FFDCFCE7');
+
+        $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)
+            ->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()
+            ->setARGB('FFF0FDF4');
+
+        $sheet->getStyle('A1:P' . $highestRow)
+            ->getBorders()
+            ->getAllBorders()
+            ->setBorderStyle(
+                \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN
+            )
+            ->getColor()
+            ->setARGB('FFE5E7EB');
+
+        $sheet->getStyle('C2:P' . $highestRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0.00');
 
-        foreach (range('A', 'O') as $column) {
+        foreach (range('A', 'P') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
-        $sheet->freezePane('A2');
-        $sheet->setAutoFilter('A1:O1');
+        $sheet->freezePane('C2');
+        $sheet->setAutoFilter('A1:P1');
 
-        $filename = 'task-category-summary-' . now()->format('Y-m-d-His') . '.xlsx';
+        $filename =
+            'task-category-summary-' . now()->format('Y-m-d-His') . '.xlsx';
 
         return response()->streamDownload(function () use ($spreadsheet) {
             $writer = new Xlsx($spreadsheet);
+
+            /*
+             * Keep formulas inside the downloaded workbook.
+             * Excel/LibreOffice recalculates them when the file opens.
+             */
             $writer->setPreCalculateFormulas(false);
             $writer->save('php://output');
         }, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Type' =>
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    public function exportCsv()
+    {
+        $rows = $this->buildRows();
+
+        $filename =
+            'task-category-summary-' . now()->format('Y-m-d-His') . '.csv';
+
+        return response()->streamDownload(function () use ($rows) {
+            $handle = fopen('php://output', 'w');
+
+            // UTF-8 BOM for Excel.
+            fwrite($handle, "\xEF\xBB\xBF");
+
+            fputcsv($handle, [
+                'No',
+                'Task Category',
+                'Total Area (Hec)',
+                'Finish Area (Hec)',
+                'Remaining Area (Hec)',
+                'Request Fuel (L/Hec)',
+                'Request Fuel (L)',
+                'Plan Use Fuel (L)',
+                'Consumed Fuel (L)',
+                'Consumed Fuel (L/Hec)',
+                'Remaining Fuel (L)',
+                'Remaining Fuel (L/Hec)',
+                'Variance Fuel (L)',
+                'Variance Fuel (L/Hec)',
+                'Total Working Hour (Hr)',
+                'Hectare/Hour',
+            ]);
+
+            foreach ($rows as $index => $row) {
+                fputcsv($handle, [
+                    $index + 1,
+                    $row['task_category'],
+                    $row['total_area'],
+                    $row['finish_area'],
+                    $row['remaining_area'],
+                    $row['request_fuel_per_hectare'],
+                    $row['request_fuel'],
+                    $row['plan_use_fuel'],
+                    $row['consumed_fuel'],
+                    $row['consumed_fuel_per_hectare'],
+                    $row['remaining_fuel'],
+                    $row['remaining_fuel_per_hectare'],
+                    $row['variance_fuel'],
+                    $row['variance_fuel_per_hectare'],
+                    $row['total_working_hour'],
+                    $row['hectare_per_hour'],
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 
@@ -399,7 +664,7 @@ new class extends Component
 
         .table-wrap table {
             width: 100%;
-            min-width: 1900px;
+            min-width: 2050px;
             border-collapse: separate;
             border-spacing: 0;
             background: #ffffff;
@@ -527,7 +792,7 @@ new class extends Component
             }
 
             .table-wrap table {
-                min-width: 1550px;
+                min-width: 1700px;
             }
         }
     </style>
@@ -588,12 +853,13 @@ new class extends Component
             </div>
 
             <div>
-                <a href="{{ route('reports.task-category-summary.export.csv', [
-                    'from_date' => $from_date,
-                    'to_date' => $to_date,
-                ]) }}" class="btn gray">
+                <button
+                    type="button"
+                    wire:click="exportCsv"
+                    class="btn gray"
+                >
                     {{ __('pages.export_csv') }}
-                </a>
+                </button>
             </div>
         </div>
 
@@ -608,6 +874,11 @@ new class extends Component
                         <th>{{ __('pages.remaining_area_hec') }}</th>
                         <th>{{ __('pages.request_fuel_l_hec') }}</th>
                         <th>{{ __('pages.request_fuel_l') }}</th>
+                        <th>
+                            {{ trans()->has('pages.plan_use_fuel_l')
+                                ? __('pages.plan_use_fuel_l')
+                                : 'Plan Use Fuel (L)' }}
+                        </th>
                         <th>{{ __('pages.consumed_fuel_l') }}</th>
                         <th>{{ __('pages.consumed_fuel_l_hec') }}</th>
                         <th>{{ __('pages.remaining_fuel_l') }}</th>
@@ -631,6 +902,7 @@ new class extends Component
 
                             <td>{{ number_format($row['request_fuel_per_hectare'], 2) }}</td>
                             <td>{{ number_format($row['request_fuel'], 2) }}</td>
+                            <td>{{ number_format($row['plan_use_fuel'], 2) }}</td>
 
                             <td>{{ number_format($row['consumed_fuel'], 2) }}</td>
                             <td>{{ number_format($row['consumed_fuel_per_hectare'], 2) }}</td>
@@ -655,7 +927,7 @@ new class extends Component
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="15" class="empty">
+                            <td colspan="16" class="empty">
                                 {{ __('pages.no_report_data_found') }}
                             </td>
                         </tr>
