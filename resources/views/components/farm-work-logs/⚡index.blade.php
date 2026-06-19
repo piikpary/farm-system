@@ -2012,7 +2012,7 @@ new class extends Component
                         <th>#</th>
                         <th>Work Plan</th>
                         <th>Task Group</th>
-                        <th>Activity</th>
+                        <th>Task</th>
                         <th>Zone / Sub Zone</th>
                         <th>Date</th>
                         <th>Tractor</th>

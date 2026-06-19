@@ -3308,7 +3308,7 @@ new class extends Component
                                             </span>
 
                                             <span class="subzone-cycle-type">
-                                                Cycle Type:
+                                                
                                                 <strong>{{ $cycleType }}</strong>
                                             </span>
 

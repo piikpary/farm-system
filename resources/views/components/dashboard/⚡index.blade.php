@@ -1157,6 +1157,7 @@ new class extends Component
         }
 
         .fod-section-title {
+            grid-column: 1 / -1;
             display: flex;
             align-items: center;
             justify-content: space-between;
