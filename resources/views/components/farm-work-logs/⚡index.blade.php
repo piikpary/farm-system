@@ -219,6 +219,50 @@ new class extends Component
             ->get();
     }
 
+    public function formatWorkPlanSelectLabel($plan): string
+    {
+        if (!$plan) {
+            return '-';
+        }
+
+        $taskCategories = $plan->activities
+            ->map(fn ($activity) => $activity->taskCategory)
+            ->filter()
+            ->unique('id')
+            ->values();
+
+        if ($taskCategories->isEmpty() && $plan->taskCategory) {
+            $taskCategories = collect([$plan->taskCategory]);
+        }
+
+        $taskGroupNames = $taskCategories
+            ->map(fn ($taskCategory) => $taskCategory->group?->name)
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(', ');
+
+        $activityNames = $taskCategories
+            ->pluck('name')
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(', ');
+
+        $zoneBlockNames = $this->getWorkPlanZoneBlocks($plan->id)
+            ->map(fn ($block) => $this->formatZoneBlockLabel($block))
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(', ');
+
+        return collect([
+            $taskGroupNames ?: ($plan->title ?: '-'),
+            $activityNames ?: '-',
+            $zoneBlockNames ?: '-',
+        ])->implode(' | ');
+    }
+
     public function applyWorkPlanToRow($index)
     {
         if (!isset($this->rows[$index])) {
@@ -1740,6 +1784,14 @@ new class extends Component
             color: #64748b;
             font-weight: 800;
         }
+        .work-plan-label {
+            display: inline-block;
+            min-width: 300px;
+            font-size: 13px;
+            font-weight: 900;
+            color: #0f172a;
+            white-space: nowrap;
+        }
 
         .no-plan {
             color: #dc2626;
@@ -1844,7 +1896,7 @@ new class extends Component
 
                     @foreach($filterWorkPlans as $plan)
                         <option value="{{ $plan->id }}">
-                            {{ $plan->title ?: '-' }}
+                            {{ $this->formatWorkPlanSelectLabel($plan) }}
                         </option>
                     @endforeach
                 </select>
@@ -2000,7 +2052,7 @@ new class extends Component
 
                                         @foreach($workPlans as $plan)
                                             <option value="{{ $plan->id }}">
-                                                {{ $plan->title ?: '-' }}
+                                                {{ $this->formatWorkPlanSelectLabel($plan) }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -2205,7 +2257,15 @@ new class extends Component
                                 <td>
                                     @if($log->workPlan)
                                         <span class="work-plan-label">
-                                            {{ $log->workPlan->title ?: '-' }}
+                                            {{ $savedTaskGroupName }}
+                                            |
+                                            {{ $log->taskCategory->name ?? '-' }}
+                                            |
+                                            @if($log->zoneBlock)
+                                                {{ $this->formatZoneBlockLabel($log->zoneBlock) }}
+                                            @else
+                                                {{ $log->zone->zone_code ?? '-' }}
+                                            @endif
                                         </span>
                                     @else
                                         <span class="no-plan">
@@ -2394,7 +2454,7 @@ new class extends Component
 
                                     @foreach($workPlans as $plan)
                                         <option value="{{ $plan->id }}">
-                                            {{ $plan->title ?: '-' }}
+                                            {{ $this->formatWorkPlanSelectLabel($plan) }}
                                         </option>
                                     @endforeach
                                 </select>

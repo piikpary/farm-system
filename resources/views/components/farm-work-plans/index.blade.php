@@ -19,7 +19,6 @@ new class extends Component
     public $paginationTheme = 'tailwind';
 
     public $search = '';
-    public $statusFilter = '';
     public $taskCategoryFilter = '';
     public $zoneBlockFilter = '';
     public $dateFrom = '';
@@ -46,12 +45,10 @@ new class extends Component
         'plan_area' => '',
         'request_l_per_hectare' => '',
         'activities' => [],
-        'status' => 'in_progress',
         'note' => '',
     ];
 
     public function updatedSearch() { $this->resetPage(); }
-    public function updatedStatusFilter() { $this->resetPage(); }
     public function updatedTaskCategoryFilter() { $this->resetPage(); }
     public function updatedZoneBlockFilter() { $this->resetPage(); }
     public function updatedDateFrom() { $this->resetPage(); }
@@ -80,7 +77,6 @@ new class extends Component
                     'fuel_per_hectare' => '',
                 ],
             ],
-            'status' => 'in_progress',
             'note' => '',
         ];
     }
@@ -437,7 +433,6 @@ new class extends Component
                 ),
             ],
             "rows.$index.activities.*.fuel_per_hectare" => 'required|numeric|min:0',
-            "rows.$index.status" => 'required|in:in_progress,complete,cancelled',
             "rows.$index.note" => 'nullable|string|max:2000',
         ]);
 
@@ -483,7 +478,7 @@ new class extends Component
                 'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
-                'status' => $row['status'],
+                'status' => 'in_progress',
                 'note' => filled($row['note'] ?? null) ? $row['note'] : null,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id(),
@@ -565,7 +560,6 @@ new class extends Component
             'plan_area' => $plan->plan_area,
             'request_l_per_hectare' => $plan->request_l_per_hectare,
             'activities' => $activities,
-            'status' => $plan->status,
             'note' => $plan->note,
         ];
     }
@@ -584,7 +578,6 @@ new class extends Component
             'plan_area' => '',
             'request_l_per_hectare' => '',
             'activities' => [],
-            'status' => 'in_progress',
             'note' => '',
         ];
     }
@@ -626,7 +619,6 @@ new class extends Component
                 ),
             ],
             'editRow.activities.*.fuel_per_hectare' => 'required|numeric|min:0',
-            'editRow.status' => 'required|in:in_progress,complete,cancelled',
             'editRow.note' => 'nullable|string|max:2000',
         ]);
 
@@ -674,7 +666,6 @@ new class extends Component
                 'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
-                'status' => $this->editRow['status'],
                 'note' => filled($this->editRow['note'] ?? null)
                     ? $this->editRow['note']
                     : null,
@@ -725,7 +716,6 @@ new class extends Component
     public function resetFilter()
     {
         $this->search = '';
-        $this->statusFilter = '';
         $this->taskCategoryFilter = '';
         $this->zoneBlockFilter = '';
         $this->dateFrom = '';
@@ -763,7 +753,6 @@ new class extends Component
                 $q->where(function ($query) use ($search, $matchingBlockIds) {
                     $query
                         ->where('title', 'like', '%' . $search . '%')
-                        ->orWhere('status', 'like', '%' . $search . '%')
                         ->orWhere('note', 'like', '%' . $search . '%')
                         ->orWhere('plan_area', 'like', '%' . $search . '%')
                         ->orWhere('request_l_per_hectare', 'like', '%' . $search . '%')
@@ -786,10 +775,6 @@ new class extends Component
                     }
                 });
             })
-            ->when(
-                $this->statusFilter,
-                fn ($q) => $q->where('status', $this->statusFilter)
-            )
             ->when($this->taskCategoryFilter, function ($q) {
                 $q->where(function ($query) {
                     $query
@@ -865,8 +850,7 @@ new class extends Component
             'G1' => __('pages.plan_area_ha'),
             'H1' => __('pages.request_l_ha'),
             'I1' => __('pages.request_l'),
-            'J1' => __('pages.status'),
-            'K1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
+            'J1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
         ];
 
         foreach ($headers as $cell => $value) {
@@ -905,8 +889,7 @@ new class extends Component
             $sheet->setCellValue('G' . $rowNumber, (float) $plan->plan_area);
             $sheet->setCellValue('H' . $rowNumber, (float) $plan->request_l_per_hectare);
             $sheet->setCellValue('I' . $rowNumber, (float) $plan->request_liters);
-            $sheet->setCellValue('J' . $rowNumber, __('pages.' . $plan->status));
-            $sheet->setCellValue('K' . $rowNumber, $plan->note);
+            $sheet->setCellValue('J' . $rowNumber, $plan->note);
 
             $rowNumber++;
         }
@@ -922,12 +905,11 @@ new class extends Component
             $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
             $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
             $sheet->setCellValue('J' . $rowNumber, '-');
-            $sheet->setCellValue('K' . $rowNumber, '-');
         }
 
-        $sheet->getStyle('A1:K1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:J1')->getFont()->setBold(true);
 
-        foreach (range('A', 'K') as $column) {
+        foreach (range('A', 'J') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
@@ -1301,9 +1283,6 @@ new class extends Component
             min-width: 90px;
         }
 
-        .col-status {
-            min-width: 105px;
-        }
 
         .col-action {
             min-width: 120px;
@@ -1425,29 +1404,6 @@ new class extends Component
             background: #dc2626;
         }
 
-        .status-pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 5px 9px;
-            border-radius: 999px;
-            font-size: 11px;
-            font-weight: 900;
-        }
-
-        .status-pill.in_progress {
-            background: #dbeafe;
-            color: #1d4ed8;
-        }
-
-        .status-pill.complete {
-            background: #dcfce7;
-            color: #15803d;
-        }
-
-        .status-pill.cancelled {
-            background: #fee2e2;
-            color: #b91c1c;
-        }
 
         .total-row {
             border-top: 2px solid #d1d5db;
@@ -2159,7 +2115,9 @@ new class extends Component
                 <input
                     type="text"
                     wire:model.live="search"
-                    placeholder="{{ __('pages.search_work_plan_placeholder') }}"
+                    placeholder="{{ trans()->has('pages.search_work_plan_without_status_placeholder')
+                        ? __('pages.search_work_plan_without_status_placeholder')
+                        : 'Search activity, zone, block, note' }}"
                 >
             </div>
 
@@ -2171,16 +2129,6 @@ new class extends Component
             <div>
                 <label>{{ __('pages.date_to') }}</label>
                 <input type="date" wire:model.live="dateTo">
-            </div>
-
-            <div>
-                <label>{{ __('pages.status') }}</label>
-                <select wire:model.live="statusFilter">
-                    <option value="">{{ __('pages.all_status') }}</option>
-                    <option value="in_progress">{{ __('pages.in_progress') }}</option>
-                    <option value="complete">{{ __('pages.complete') }}</option>
-                    <option value="cancelled">{{ __('pages.cancelled') }}</option>
-                </select>
             </div>
 
             <div>
@@ -2274,7 +2222,6 @@ new class extends Component
                         <th>{{ __('pages.plan_area_ha') }}</th>
                         <th>{{ __('pages.request_l_ha') }}</th>
                         <th>{{ __('pages.request_l') }}</th>
-                        <th>{{ __('pages.status') }}</th>
                         <th>Work Logs</th>
                         <th>{{ __('pages.action') }}</th>
                     </tr>
@@ -2393,15 +2340,6 @@ new class extends Component
                                         readonly
                                     >
                                 </td>
-
-                                <td class="col-status">
-                                    <select wire:model.live="editRow.status">
-                                        <option value="in_progress">{{ __('pages.in_progress') }}</option>
-                                        <option value="complete">{{ __('pages.complete') }}</option>
-                                        <option value="cancelled">{{ __('pages.cancelled') }}</option>
-                                    </select>
-                                </td>
-
                                 <td>-</td>
 
                                 <td class="col-action">
@@ -2426,7 +2364,7 @@ new class extends Component
                             </tr>
 
                            <tr class="activity-detail-row">
-    <td colspan="13">
+    <td colspan="12">
         <div class="activity-editor-card">
             <div class="activity-editor-header">
                 <div>
@@ -2609,13 +2547,6 @@ new class extends Component
                                         {{ number_format((float) $plan->request_liters, 2) }}
                                     </strong>
                                 </td>
-
-                                <td>
-                                    <span class="status-pill {{ $plan->status }}">
-                                        {{ __('pages.' . $plan->status) }}
-                                    </span>
-                                </td>
-
                                 <td>
                                     <strong>
                                         {{ number_format((int) $plan->work_logs_count) }}
@@ -2651,7 +2582,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="13" class="empty">
+                                <td colspan="12" class="empty">
                                     {{ __('pages.no_work_plan_found') }}
                                 </td>
                             </tr>
@@ -2795,23 +2726,6 @@ new class extends Component
                                     readonly
                                 >
                             </td>
-
-                            <td class="col-status">
-                                <select wire:model.live="rows.{{ $index }}.status">
-                                    <option value="in_progress">
-                                        {{ __('pages.in_progress') }}
-                                    </option>
-
-                                    <option value="complete">
-                                        {{ __('pages.complete') }}
-                                    </option>
-
-                                    <option value="cancelled">
-                                        {{ __('pages.cancelled') }}
-                                    </option>
-                                </select>
-                            </td>
-
                             <td>-</td>
 
                             <td class="col-action">
@@ -2870,7 +2784,6 @@ new class extends Component
                             {{ number_format((float) $this->totalRequestLiters, 2) }}
                         </td>
 
-                        <td>-</td>
                         <td>-</td>
                         <td>-</td>
                     </tr>
