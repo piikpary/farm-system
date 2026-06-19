@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Models\BlockRegister;
 
 new class extends Component
 {
@@ -44,6 +45,9 @@ new class extends Component
         'zone_block_ids' => [],
         'plan_area' => '',
         'request_l_per_hectare' => '',
+        'request_liters' => '',
+        'plan_area_version' => 0,
+        'request_liters_version' => 0,
         'activities' => [],
         'note' => '',
     ];
@@ -71,6 +75,9 @@ new class extends Component
             'zone_block_ids' => [],
             'plan_area' => '',
             'request_l_per_hectare' => '',
+            'request_liters' => '',
+            'plan_area_version' => 0,
+            'request_liters_version' => 0,
             'activities' => [
                 [
                     'task_category_id' => '',
@@ -139,10 +146,34 @@ new class extends Component
         $field = $parts[1] ?? null;
 
         if ($field === 'zone_block_ids') {
-            $this->rows[$rowIndex]['plan_area'] =
-                $this->calculateZoneBlockArea(
-                    $this->rows[$rowIndex]['zone_block_ids'] ?? []
+            $planArea = $this->calculateZoneBlockArea(
+                $this->rows[$rowIndex]['zone_block_ids'] ?? []
+            );
+
+            $this->rows[$rowIndex]['plan_area'] = $planArea;
+            $this->rows[$rowIndex]['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->rows[$rowIndex]['request_l_per_hectare'] ?? 0
                 );
+
+            $this->rows[$rowIndex]['plan_area_version'] =
+                (int) ($this->rows[$rowIndex]['plan_area_version'] ?? 0) + 1;
+            $this->rows[$rowIndex]['request_liters_version'] =
+                (int) ($this->rows[$rowIndex]['request_liters_version'] ?? 0) + 1;
+
+            return;
+        }
+
+        if (in_array($field, ['plan_area', 'request_l_per_hectare'], true)) {
+            $this->rows[$rowIndex]['request_liters'] =
+                $this->calculateRequestLiters(
+                    $this->rows[$rowIndex]['plan_area'] ?? 0,
+                    $this->rows[$rowIndex]['request_l_per_hectare'] ?? 0
+                );
+
+            $this->rows[$rowIndex]['request_liters_version'] =
+                (int) ($this->rows[$rowIndex]['request_liters_version'] ?? 0) + 1;
 
             return;
         }
@@ -183,15 +214,40 @@ new class extends Component
 
     public function updatedEditRowZoneBlockIds()
     {
-        $this->editRow['plan_area'] = $this->calculateZoneBlockArea(
+        $planArea = $this->calculateZoneBlockArea(
             $this->editRow['zone_block_ids'] ?? []
         );
+
+        $this->editRow['plan_area'] = $planArea;
+        $this->editRow['request_liters'] =
+            $this->calculateRequestLiters(
+                $planArea,
+                $this->editRow['request_l_per_hectare'] ?? 0
+            );
+
+        $this->editRow['plan_area_version'] =
+            (int) ($this->editRow['plan_area_version'] ?? 0) + 1;
+        $this->editRow['request_liters_version'] =
+            (int) ($this->editRow['request_liters_version'] ?? 0) + 1;
     }
 
     public function updatedEditRow($value, $key)
     {
         $parts = explode('.', $key);
         $field = $parts[0] ?? null;
+
+        if (in_array($field, ['plan_area', 'request_l_per_hectare'], true)) {
+            $this->editRow['request_liters'] =
+                $this->calculateRequestLiters(
+                    $this->editRow['plan_area'] ?? 0,
+                    $this->editRow['request_l_per_hectare'] ?? 0
+                );
+
+            $this->editRow['request_liters_version'] =
+                (int) ($this->editRow['request_liters_version'] ?? 0) + 1;
+
+            return;
+        }
 
         if ($field === 'task_category_group_id') {
             $this->editRow['activities'] = [
@@ -346,8 +402,120 @@ new class extends Component
         $this->zonePickerIndex = null;
     }
 
+    public function toggleActiveZoneBlock($blockId)
+    {
+        $blockId = (int) $blockId;
+
+        $blockExists = ZoneBlock::query()
+            ->whereKey($blockId)
+            ->where('status', 'active')
+            ->exists();
+
+        if (!$blockExists) {
+            return;
+        }
+
+        if ($this->zonePickerMode === 'edit') {
+            $ids = collect($this->editRow['zone_block_ids'] ?? [])
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+            $ids = $ids->contains($blockId)
+                ? $ids->reject(fn ($id) => $id === $blockId)
+                : $ids->push($blockId);
+
+            $ids = $ids
+                ->values()
+                ->map(fn ($id) => (string) $id)
+                ->toArray();
+
+            $planArea = $this->calculateZoneBlockArea($ids);
+
+            $this->editRow['zone_block_ids'] = $ids;
+            $this->editRow['plan_area'] = $planArea;
+            $this->editRow['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->editRow['request_l_per_hectare'] ?? 0
+                );
+
+            return;
+        }
+
+        if (
+            $this->zonePickerMode === 'create' &&
+            $this->zonePickerIndex !== null &&
+            isset($this->rows[$this->zonePickerIndex])
+        ) {
+            $index = $this->zonePickerIndex;
+
+            $ids = collect($this->rows[$index]['zone_block_ids'] ?? [])
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+            $ids = $ids->contains($blockId)
+                ? $ids->reject(fn ($id) => $id === $blockId)
+                : $ids->push($blockId);
+
+            $ids = $ids
+                ->values()
+                ->map(fn ($id) => (string) $id)
+                ->toArray();
+
+            $planArea = $this->calculateZoneBlockArea($ids);
+
+            $this->rows[$index]['zone_block_ids'] = $ids;
+            $this->rows[$index]['plan_area'] = $planArea;
+            $this->rows[$index]['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->rows[$index]['request_l_per_hectare'] ?? 0
+                );
+        }
+    }
+
     public function closeZonePicker()
     {
+        if ($this->zonePickerMode === 'edit') {
+            $planArea = $this->calculateZoneBlockArea(
+                $this->editRow['zone_block_ids'] ?? []
+            );
+
+            $this->editRow['plan_area'] = $planArea;
+            $this->editRow['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->editRow['request_l_per_hectare'] ?? 0
+                );
+            $this->editRow['plan_area_version'] =
+                (int) ($this->editRow['plan_area_version'] ?? 0) + 1;
+            $this->editRow['request_liters_version'] =
+                (int) ($this->editRow['request_liters_version'] ?? 0) + 1;
+        }
+
+        if (
+            $this->zonePickerMode === 'create' &&
+            $this->zonePickerIndex !== null &&
+            isset($this->rows[$this->zonePickerIndex])
+        ) {
+            $planArea = $this->calculateZoneBlockArea(
+                $this->rows[$this->zonePickerIndex]['zone_block_ids'] ?? []
+            );
+
+            $this->rows[$this->zonePickerIndex]['plan_area'] = $planArea;
+            $this->rows[$this->zonePickerIndex]['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->rows[$this->zonePickerIndex]['request_l_per_hectare'] ?? 0
+                );
+            $this->rows[$this->zonePickerIndex]['plan_area_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['plan_area_version'] ?? 0) + 1;
+            $this->rows[$this->zonePickerIndex]['request_liters_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['request_liters_version'] ?? 0) + 1;
+        }
+
         $this->zonePickerOpen = false;
         $this->zonePickerMode = null;
         $this->zonePickerIndex = null;
@@ -358,6 +526,11 @@ new class extends Component
         if ($this->zonePickerMode === 'edit') {
             $this->editRow['zone_block_ids'] = [];
             $this->editRow['plan_area'] = 0;
+            $this->editRow['request_liters'] = 0;
+            $this->editRow['plan_area_version'] =
+                (int) ($this->editRow['plan_area_version'] ?? 0) + 1;
+            $this->editRow['request_liters_version'] =
+                (int) ($this->editRow['request_liters_version'] ?? 0) + 1;
             return;
         }
 
@@ -368,6 +541,11 @@ new class extends Component
         ) {
             $this->rows[$this->zonePickerIndex]['zone_block_ids'] = [];
             $this->rows[$this->zonePickerIndex]['plan_area'] = 0;
+            $this->rows[$this->zonePickerIndex]['request_liters'] = 0;
+            $this->rows[$this->zonePickerIndex]['plan_area_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['plan_area_version'] ?? 0) + 1;
+            $this->rows[$this->zonePickerIndex]['request_liters_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['request_liters_version'] ?? 0) + 1;
         }
     }
 
@@ -379,8 +557,20 @@ new class extends Component
             ->toArray();
 
         if ($this->zonePickerMode === 'edit') {
+            $planArea = $this->calculateZoneBlockArea($ids);
+
             $this->editRow['zone_block_ids'] = $ids;
-            $this->editRow['plan_area'] = $this->calculateZoneBlockArea($ids);
+            $this->editRow['plan_area'] = $planArea;
+            $this->editRow['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->editRow['request_l_per_hectare'] ?? 0
+                );
+            $this->editRow['plan_area_version'] =
+                (int) ($this->editRow['plan_area_version'] ?? 0) + 1;
+            $this->editRow['request_liters_version'] =
+                (int) ($this->editRow['request_liters_version'] ?? 0) + 1;
+
             return;
         }
 
@@ -389,8 +579,19 @@ new class extends Component
             $this->zonePickerIndex !== null &&
             isset($this->rows[$this->zonePickerIndex])
         ) {
+            $planArea = $this->calculateZoneBlockArea($ids);
+
             $this->rows[$this->zonePickerIndex]['zone_block_ids'] = $ids;
-            $this->rows[$this->zonePickerIndex]['plan_area'] = $this->calculateZoneBlockArea($ids);
+            $this->rows[$this->zonePickerIndex]['plan_area'] = $planArea;
+            $this->rows[$this->zonePickerIndex]['request_liters'] =
+                $this->calculateRequestLiters(
+                    $planArea,
+                    $this->rows[$this->zonePickerIndex]['request_l_per_hectare'] ?? 0
+                );
+            $this->rows[$this->zonePickerIndex]['plan_area_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['plan_area_version'] ?? 0) + 1;
+            $this->rows[$this->zonePickerIndex]['request_liters_version'] =
+                (int) ($this->rows[$this->zonePickerIndex]['request_liters_version'] ?? 0) + 1;
         }
     }
 
@@ -420,7 +621,9 @@ new class extends Component
             "rows.$index.plan_end" => 'nullable|date|after_or_equal:rows.' . $index . '.plan_start',
             "rows.$index.zone_block_ids" => 'required|array|min:1',
             "rows.$index.zone_block_ids.*" => 'exists:zone_blocks,id',
+            "rows.$index.plan_area" => 'required|numeric|min:0',
             "rows.$index.request_l_per_hectare" => 'required|numeric|min:0',
+            "rows.$index.request_liters" => 'required|numeric|min:0',
             "rows.$index.activities" => 'required|array|min:1',
             "rows.$index.activities.*.task_category_id" => [
                 'required',
@@ -444,16 +647,19 @@ new class extends Component
             ->values()
             ->toArray();
 
-        $planArea = $this->calculateZoneBlockArea($zoneBlockIds);
+        $planArea = round(
+            (float) ($row['plan_area'] ?? 0),
+            2
+        );
 
         $totalFuelPerHectare = round(
             (float) ($row['request_l_per_hectare'] ?? 0),
             2
         );
 
-        $requestLiters = $this->calculateRequestLiters(
-            $planArea,
-            $totalFuelPerHectare
+        $requestLiters = round(
+            (float) ($row['request_liters'] ?? 0),
+            2
         );
 
         $taskGroupName = TaskCategoryGroup::whereKey(
@@ -559,6 +765,9 @@ new class extends Component
             'zone_block_ids' => $plan->zone_block_ids ?: [],
             'plan_area' => $plan->plan_area,
             'request_l_per_hectare' => $plan->request_l_per_hectare,
+            'request_liters' => $plan->request_liters,
+            'plan_area_version' => 0,
+            'request_liters_version' => 0,
             'activities' => $activities,
             'note' => $plan->note,
         ];
@@ -577,6 +786,9 @@ new class extends Component
             'zone_block_ids' => [],
             'plan_area' => '',
             'request_l_per_hectare' => '',
+            'request_liters' => '',
+            'plan_area_version' => 0,
+            'request_liters_version' => 0,
             'activities' => [],
             'note' => '',
         ];
@@ -606,7 +818,9 @@ new class extends Component
             'editRow.plan_end' => 'nullable|date|after_or_equal:editRow.plan_start',
             'editRow.zone_block_ids' => 'required|array|min:1',
             'editRow.zone_block_ids.*' => 'exists:zone_blocks,id',
+            'editRow.plan_area' => 'required|numeric|min:0',
             'editRow.request_l_per_hectare' => 'required|numeric|min:0',
+            'editRow.request_liters' => 'required|numeric|min:0',
             'editRow.activities' => 'required|array|min:1',
             'editRow.activities.*.task_category_id' => [
                 'required',
@@ -628,16 +842,19 @@ new class extends Component
             ->values()
             ->toArray();
 
-        $planArea = $this->calculateZoneBlockArea($zoneBlockIds);
+        $planArea = round(
+            (float) ($this->editRow['plan_area'] ?? 0),
+            2
+        );
 
         $totalFuelPerHectare = round(
             (float) ($this->editRow['request_l_per_hectare'] ?? 0),
             2
         );
 
-        $requestLiters = $this->calculateRequestLiters(
-            $planArea,
-            $totalFuelPerHectare
+        $requestLiters = round(
+            (float) ($this->editRow['request_liters'] ?? 0),
+            2
         );
 
         $taskGroupName = TaskCategoryGroup::whereKey(
@@ -1018,6 +1235,13 @@ new class extends Component
             ->orderBy('block_code')
             ->get();
 
+        $blockRegistersByZoneBlock = BlockRegister::with('plantingCycleType')
+            ->whereIn('zone_block_id', $zoneBlocks->pluck('id'))
+            ->orderByDesc('id')
+            ->get()
+            ->unique('zone_block_id')
+            ->keyBy(fn ($register) => (string) $register->zone_block_id);
+
         return [
             'taskCategoryGroups' => TaskCategoryGroup::query()
                 ->where('status', true)
@@ -1031,6 +1255,7 @@ new class extends Component
             'zoneBlockGroups' => $zoneBlocks->groupBy(
                 fn ($block) => $block->zone_id ?: 'no_zone'
             ),
+            'blockRegistersByZoneBlock' => $blockRegistersByZoneBlock,
         ];
     }
 };
@@ -1877,6 +2102,17 @@ new class extends Component
         .zone-select-btn > span:first-child { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
         .zone-select-btn small { color:#15803d; font-size:10px; font-weight:900; }
         .subzone-area { margin-top:5px; color:#15803d; font-size:12px; font-weight:950; }
+        .subzone-cycle-type {
+                margin-top: 5px;
+                color: #475569;
+                font-size: 11px;
+                font-weight: 800;
+            }
+
+            .subzone-cycle-type strong {
+                color: #0f172a;
+                font-weight: 950;
+            }
         .zone-footer-summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
         .activity-editor-item input[readonly] { background:#f1f5f9; color:#0f172a; font-weight:900; }
 
@@ -2231,18 +2467,24 @@ new class extends Component
                     @forelse($this->plans as $plan)
                         @if($editingId === $plan->id)
                             @php
-                                $editZoneArea = $this->calculateZoneBlockArea(
+                                $editSelectedZoneArea = $this->calculateZoneBlockArea(
                                     $editRow['zone_block_ids'] ?? []
                                 );
+
+                                $editPlanArea = filled($editRow['plan_area'] ?? null)
+                                    ? (float) $editRow['plan_area']
+                                    : $editSelectedZoneArea;
 
                                 $editFuelPerHa = (float) (
                                     $editRow['request_l_per_hectare'] ?? 0
                                 );
 
-                                $editRequestLiters = $this->calculateRequestLiters(
-                                    $editZoneArea,
-                                    $editFuelPerHa
-                                );
+                                $editRequestLiters = filled($editRow['request_liters'] ?? null)
+                                    ? (float) $editRow['request_liters']
+                                    : $this->calculateRequestLiters(
+                                        $editPlanArea,
+                                        $editFuelPerHa
+                                    );
 
                                 $editTaskCategories = $taskCategories->filter(
                                     fn ($task) =>
@@ -2304,7 +2546,7 @@ new class extends Component
                                     >
                                         <span>
                                             {{ $this->getZoneBlockSummary($editRow['zone_block_ids'] ?? []) }}
-                                            <small>{{ number_format($editZoneArea, 2) }} Ha</small>
+                                            <small>{{ number_format($editSelectedZoneArea, 2) }} Ha</small>
                                         </span>
 
                                         <span class="zone-select-count">
@@ -2315,10 +2557,12 @@ new class extends Component
 
                                 <td class="col-number">
                                     <input
-                                        type="text"
-                                        class="readonly-calc"
-                                        value="{{ number_format($editZoneArea, 2) }}"
-                                        readonly
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="edit-plan-area-{{ $plan->id }}-{{ $editRow['plan_area_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="editRow.plan_area"
+                                        placeholder="0.00"
                                     >
                                 </td>
 
@@ -2327,17 +2571,19 @@ new class extends Component
                                         type="number"
                                         min="0"
                                         step="0.01"
-                                        wire:model.live="editRow.request_l_per_hectare"
+                                        wire:model.live.debounce.250ms="editRow.request_l_per_hectare"
                                         placeholder="0.00"
                                     >
                                 </td>
 
                                 <td class="col-number">
                                     <input
-                                        type="text"
-                                        class="readonly-calc"
-                                        value="{{ number_format($editRequestLiters, 2) }}"
-                                        readonly
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="edit-request-liters-{{ $plan->id }}-{{ $editRow['request_liters_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="editRow.request_liters"
+                                        placeholder="0.00"
                                     >
                                 </td>
                                 <td>-</td>
@@ -2414,7 +2660,7 @@ new class extends Component
                             <label class="activity-editor-label">Zone Area (Ha)</label>
                             <input
                                 type="text"
-                                value="{{ number_format($editZoneArea, 2) }}"
+                                value="{{ number_format($editPlanArea, 2) }}"
                                 readonly
                             >
                         </div>
@@ -2434,7 +2680,7 @@ new class extends Component
                             <label class="activity-editor-label">Total Fuel (L)</label>
                             <input
                                 type="text"
-                                value="{{ number_format($this->calculateActivityTotalFuel($editZoneArea, $activity['fuel_per_hectare'] ?? 0), 2) }}"
+                                value="{{ number_format($this->calculateActivityTotalFuel($editPlanArea, $activity['fuel_per_hectare'] ?? 0), 2) }}"
                                 readonly
                             >
                         </div>
@@ -2458,7 +2704,7 @@ new class extends Component
             </div>
 
             <div class="activity-editor-footer">
-                <span>Zone Area: <strong>{{ number_format($editZoneArea, 2) }} Ha</strong></span>
+                <span>Zone Area: <strong>{{ number_format($editPlanArea, 2) }} Ha</strong></span>
                 <span>Total Fuel/Ha: <strong>{{ number_format($editFuelPerHa, 2) }} L/Ha</strong></span>
                 <span>Total Fuel: <strong>{{ number_format($editRequestLiters, 2) }} L</strong></span>
             </div>
@@ -2591,18 +2837,24 @@ new class extends Component
 
                     @foreach($rows as $index => $row)
                         @php
-                            $rowZoneArea = $this->calculateZoneBlockArea(
+                            $rowSelectedZoneArea = $this->calculateZoneBlockArea(
                                 $row['zone_block_ids'] ?? []
                             );
+
+                            $rowPlanArea = filled($row['plan_area'] ?? null)
+                                ? (float) $row['plan_area']
+                                : $rowSelectedZoneArea;
 
                             $rowFuelPerHa = (float) (
                                 $row['request_l_per_hectare'] ?? 0
                             );
 
-                            $rowRequestLiters = $this->calculateRequestLiters(
-                                $rowZoneArea,
-                                $rowFuelPerHa
-                            );
+                            $rowRequestLiters = filled($row['request_liters'] ?? null)
+                                ? (float) $row['request_liters']
+                                : $this->calculateRequestLiters(
+                                    $rowPlanArea,
+                                    $rowFuelPerHa
+                                );
 
                             $rowTaskCategories = $taskCategories->filter(
                                 fn ($task) =>
@@ -2689,7 +2941,7 @@ new class extends Component
                                         ) }}
 
                                         <small>
-                                            {{ number_format($rowZoneArea, 2) }} Ha
+                                            {{ number_format($rowSelectedZoneArea, 2) }} Ha
                                         </small>
                                     </span>
 
@@ -2701,10 +2953,12 @@ new class extends Component
 
                             <td class="col-number">
                                 <input
-                                    type="text"
-                                    class="readonly-calc"
-                                    value="{{ number_format($rowZoneArea, 2) }}"
-                                    readonly
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    wire:key="new-plan-area-{{ $index }}-{{ $row['plan_area_version'] ?? 0 }}"
+                                    wire:model.live.debounce.250ms="rows.{{ $index }}.plan_area"
+                                    placeholder="0.00"
                                 >
                             </td>
 
@@ -2713,17 +2967,19 @@ new class extends Component
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    wire:model.live="rows.{{ $index }}.request_l_per_hectare"
+                                    wire:model.live.debounce.250ms="rows.{{ $index }}.request_l_per_hectare"
                                     placeholder="0.00"
                                 >
                             </td>
 
                             <td class="col-number">
                                 <input
-                                    type="text"
-                                    class="readonly-calc"
-                                    value="{{ number_format($rowRequestLiters, 2) }}"
-                                    readonly
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    wire:key="new-request-liters-{{ $index }}-{{ $row['request_liters_version'] ?? 0 }}"
+                                    wire:model.live.debounce.250ms="rows.{{ $index }}.request_liters"
+                                    placeholder="0.00"
                                 >
                             </td>
                             <td>-</td>
@@ -2923,6 +3179,10 @@ new class extends Component
                     $rows[$zonePickerIndex]['zone_block_ids'] ?? [];
             }
             $activeSelectedArea = $this->calculateZoneBlockArea($activeSelectedIds);
+            $activeSelectedIdStrings = collect($activeSelectedIds)
+                ->map(fn ($id) => (string) $id)
+                ->values()
+                ->toArray();
         @endphp
 
         <div
@@ -3005,17 +3265,36 @@ new class extends Component
 
                                 <div class="subzone-bottom">
                                     @foreach($blocks as $block)
+                                        @php
+                                            $blockRegister = $blockRegistersByZoneBlock->get(
+                                                (string) $block->id
+                                            );
+
+                                            $plantingCycleType = $blockRegister?->plantingCycleType;
+
+                                                $cycleType = collect([
+                                                    $plantingCycleType?->code,
+                                                    $plantingCycleType?->name,
+                                                ])
+                                                    ->filter(fn ($value) => filled($value))
+                                                    ->implode(' - ');
+
+                                                $cycleType = filled($cycleType) ? $cycleType : '-';
+                                        @endphp
+
                                         <label class="subzone-option">
                                             @if($zonePickerMode === 'edit')
                                                 <input
                                                     type="checkbox"
                                                     value="{{ $block->id }}"
+                                                    wire:key="edit-zone-checkbox-{{ $block->id }}"
                                                     wire:model.live="editRow.zone_block_ids"
                                                 >
                                             @else
                                                 <input
                                                     type="checkbox"
                                                     value="{{ $block->id }}"
+                                                    wire:key="create-zone-checkbox-{{ $zonePickerIndex }}-{{ $block->id }}"
                                                     wire:model.live="rows.{{ $zonePickerIndex }}.zone_block_ids"
                                                 >
                                             @endif
@@ -3027,7 +3306,15 @@ new class extends Component
                                             <span class="subzone-name">
                                                 {{ $block->name ?: __('pages.zone_block') }}
                                             </span>
-                                            <span class="subzone-area">{{ number_format((float) $block->area, 2) }} Ha</span>
+
+                                            <span class="subzone-cycle-type">
+                                                Cycle Type:
+                                                <strong>{{ $cycleType }}</strong>
+                                            </span>
+
+                                            <span class="subzone-area">
+                                                {{ number_format((float) $block->area, 2) }} Ha
+                                            </span>
                                         </label>
                                     @endforeach
                                 </div>
