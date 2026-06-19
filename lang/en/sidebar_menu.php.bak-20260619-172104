@@ -4,7 +4,7 @@ return [
     'tractors' => 'Tractors',
     'drivers' => 'Drivers',
     'zones' => 'Zones',
-    'task_categories' => 'Task',
+    'task_categories' => 'Task Categories',
 
     'fuel_report' => 'Fuel Report',
     'tractor_report' => 'Tractor Report',

@@ -1334,7 +1334,9 @@ new class extends Component
 
                     @foreach($zones as $zone)
                         <option value="{{ $zone->id }}">
-                            {{ $zone->name }}
+                            {{ filled(trim((string) $zone->zone_code))
+                                ? trim($zone->zone_code)
+                                : ($zone->name ?: 'Zone #' . $zone->id) }}
                         </option>
                     @endforeach
                 </select>

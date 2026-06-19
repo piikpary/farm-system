@@ -487,7 +487,7 @@ return [
 'date_from' => 'Date From',
 'date_to' => 'Date To',
 'status' => 'Status',
-'activity' => 'Task',
+'activity' => 'Activity',
 'zone_block' => 'Zone Block',
 'all_status' => 'All Status',
 'all_activities' => 'All Activities',

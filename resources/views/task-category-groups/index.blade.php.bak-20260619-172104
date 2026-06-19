@@ -188,7 +188,7 @@
 
         <div class="page-header">
             <div>
-                <h1 class="page-title">Task Group</h1>
+                <h1 class="page-title">Task Category Groups</h1>
             </div>
 
             <div class="page-actions">
@@ -273,7 +273,7 @@
                             <th>#</th>
                             <th>Name *</th>
                             <th>Description</th>
-                            <th>Task</th>
+                            <th>Task Categories</th>
                             <th>Status</th>
                             <th width="190">Action</th>
                         </tr>

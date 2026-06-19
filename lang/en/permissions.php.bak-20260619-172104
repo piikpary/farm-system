@@ -31,7 +31,7 @@ return [
     'zones.delete' => 'Delete Zone',
     'zones.map' => 'Manage Zone Map',
 
-    'task_categories.view' => 'View Task',
+    'task_categories.view' => 'View Task Categories',
     'task_categories.create' => 'Add Task Category',
     'task_categories.edit' => 'Edit Task Category',
     'task_categories.delete' => 'Delete Task Category',

@@ -408,9 +408,9 @@
                     @if($showTaskCategories && $user->hasPermission('task_categories.view'))
                         <a href="{{ route('task-category-groups.index') }}"
                         class="farm-menu-link {{ request()->routeIs('task-category-groups.*') ? 'active' : '' }}"
-                        title="Task Group">
+                        title="Task Category Groups">
                             <span class="farm-menu-icon">📁</span>
-                            <span>Task Group</span>
+                            <span>Task Category Groups</span>
                         </a>
 
                         <a href="{{ route('task-categories.index') }}"

@@ -7,7 +7,7 @@ return [
     'tractors' => 'Tractors',
     'drivers' => 'Drivers',
     'zones' => 'Zones',
-    'task_categories' => 'Task',
+    'task_categories' => 'Task Categories',
     'reports' => 'Reports',
     'settings' => 'Settings',
     'users' => 'Users',
