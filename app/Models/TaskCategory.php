@@ -14,6 +14,7 @@ class TaskCategory extends Model
         'status',
         'created_by',
         'updated_by',
+        'task_category_group_id',
     ];
 
     protected $casts = [
@@ -35,4 +36,11 @@ class TaskCategory extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+    public function group()
+{
+    return $this->belongsTo(
+        TaskCategoryGroup::class,
+        'task_category_group_id'
+    );
+}
 }

@@ -4,6 +4,8 @@ use Livewire\Component;
 use App\Models\FarmWorkLog;
 use App\Models\FarmWorkPlan;
 use App\Models\TaskCategory;
+use App\Models\Zone;
+use App\Models\ZoneBlock;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -11,10 +13,69 @@ new class extends Component
 {
     public $from_date;
     public $to_date;
+    public $zone_id;
+    public $zone_block_id;
+    public $activity_id;
+
+    public function updatedZoneId()
+    {
+        $this->zone_block_id = null;
+    }
 
     public function resetFilter()
     {
-        $this->reset(['from_date', 'to_date']);
+        $this->reset([
+            'from_date',
+            'to_date',
+            'zone_id',
+            'zone_block_id',
+            'activity_id',
+        ]);
+    }
+
+    private function selectedZoneBlockIds(): ?array
+    {
+        if ($this->zone_block_id) {
+            return [(int) $this->zone_block_id];
+        }
+
+        if ($this->zone_id) {
+            return ZoneBlock::query()
+                ->where('zone_id', $this->zone_id)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        return null;
+    }
+
+    private function applyPlanZoneBlockFilter($query, ?array $zoneBlockIds)
+    {
+        if ($zoneBlockIds === null) {
+            return $query;
+        }
+
+        if (empty($zoneBlockIds)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(function ($outerQuery) use ($zoneBlockIds) {
+            foreach ($zoneBlockIds as $zoneBlockId) {
+                $outerQuery->orWhere(function ($innerQuery) use ($zoneBlockId) {
+                    $innerQuery
+                        ->whereJsonContains(
+                            'zone_block_ids',
+                            (int) $zoneBlockId
+                        )
+                        ->orWhereJsonContains(
+                            'zone_block_ids',
+                            (string) $zoneBlockId
+                        );
+                });
+            }
+        });
     }
 
     private function buildRows()
@@ -41,6 +102,7 @@ new class extends Component
          */
 
         $summary = collect();
+        $selectedZoneBlockIds = $this->selectedZoneBlockIds();
 
         /*
          * New Work Plan concept:
@@ -49,43 +111,91 @@ new class extends Component
          * Each activity receives the plan's full planned area and its own
          * fuel-per-hectare value.
          */
-        $plans = FarmWorkPlan::with([
+        $plansQuery = FarmWorkPlan::with([
             'taskCategory',
             'activities.taskCategory',
         ])
             ->when(
                 $this->from_date,
-                fn ($q) => $q->whereDate('plan_date', '>=', $this->from_date)
+                fn ($q) => $q->whereDate(
+                    'plan_date',
+                    '>=',
+                    $this->from_date
+                )
             )
             ->when(
                 $this->to_date,
-                fn ($q) => $q->whereDate('plan_date', '<=', $this->to_date)
+                fn ($q) => $q->whereDate(
+                    'plan_date',
+                    '<=',
+                    $this->to_date
+                )
             )
-            ->get();
+            ->when($this->activity_id, function ($q) {
+                $activityId = (int) $this->activity_id;
+
+                $q->where(function ($activityQuery) use ($activityId) {
+                    $activityQuery
+                        ->where('task_category_id', $activityId)
+                        ->orWhereHas(
+                            'activities',
+                            function ($relationQuery) use ($activityId) {
+                                $relationQuery->where(
+                                    'task_category_id',
+                                    $activityId
+                                );
+                            }
+                        );
+                });
+            });
+
+        $this->applyPlanZoneBlockFilter(
+            $plansQuery,
+            $selectedZoneBlockIds
+        );
+
+        $plans = $plansQuery->get();
 
         foreach ($plans as $plan) {
             $planArea = (float) $plan->plan_area;
 
             if ($plan->activities->isNotEmpty()) {
                 foreach ($plan->activities as $activity) {
-                    $taskCategoryId = (int) $activity->task_category_id;
+                    $taskCategoryId =
+                        (int) $activity->task_category_id;
 
                     if (!$taskCategoryId) {
                         continue;
                     }
 
-                    $fuelPerHectare = (float) $activity->fuel_per_hectare;
-                    $requestFuel = $planArea * $fuelPerHectare;
+                    if (
+                        $this->activity_id &&
+                        $taskCategoryId !== (int) $this->activity_id
+                    ) {
+                        continue;
+                    }
 
-                    $current = $summary->get($taskCategoryId, [
-                        'task_category_id' => $taskCategoryId,
-                        'task_category' => optional($activity->taskCategory)->name ?? '-',
-                        'total_area' => 0,
-                        'request_fuel' => 0,
-                        'finish_area' => 0,
-                        'consumed_fuel' => 0,
-                        'total_working_hour' => 0,
-                    ]);
+                    $fuelPerHectare =
+                        (float) $activity->fuel_per_hectare;
+
+                    $requestFuel =
+                        $planArea * $fuelPerHectare;
+
+                    $current = $summary->get(
+                        $taskCategoryId,
+                        [
+                            'task_category_id' => $taskCategoryId,
+                            'task_category' =>
+                                optional(
+                                    $activity->taskCategory
+                                )->name ?? '-',
+                            'total_area' => 0,
+                            'request_fuel' => 0,
+                            'finish_area' => 0,
+                            'consumed_fuel' => 0,
+                            'total_working_hour' => 0,
+                        ]
+                    );
 
                     $current['total_area'] += $planArea;
                     $current['request_fuel'] += $requestFuel;
@@ -101,18 +211,34 @@ new class extends Component
              * farm_work_plan_activities table was introduced.
              */
             if ($plan->task_category_id) {
-                $taskCategoryId = (int) $plan->task_category_id;
-                $requestFuel = (float) $plan->request_liters;
+                $taskCategoryId =
+                    (int) $plan->task_category_id;
 
-                $current = $summary->get($taskCategoryId, [
-                    'task_category_id' => $taskCategoryId,
-                    'task_category' => optional($plan->taskCategory)->name ?? '-',
-                    'total_area' => 0,
-                    'request_fuel' => 0,
-                    'finish_area' => 0,
-                    'consumed_fuel' => 0,
-                    'total_working_hour' => 0,
-                ]);
+                if (
+                    $this->activity_id &&
+                    $taskCategoryId !== (int) $this->activity_id
+                ) {
+                    continue;
+                }
+
+                $requestFuel =
+                    (float) $plan->request_liters;
+
+                $current = $summary->get(
+                    $taskCategoryId,
+                    [
+                        'task_category_id' => $taskCategoryId,
+                        'task_category' =>
+                            optional(
+                                $plan->taskCategory
+                            )->name ?? '-',
+                        'total_area' => 0,
+                        'request_fuel' => 0,
+                        'finish_area' => 0,
+                        'consumed_fuel' => 0,
+                        'total_working_hour' => 0,
+                    ]
+                );
 
                 $current['total_area'] += $planArea;
                 $current['request_fuel'] += $requestFuel;
@@ -124,108 +250,211 @@ new class extends Component
         $logs = FarmWorkLog::with('taskCategory')
             ->when(
                 $this->from_date,
-                fn ($q) => $q->whereDate('work_date', '>=', $this->from_date)
+                fn ($q) => $q->whereDate(
+                    'work_date',
+                    '>=',
+                    $this->from_date
+                )
             )
             ->when(
                 $this->to_date,
-                fn ($q) => $q->whereDate('work_date', '<=', $this->to_date)
+                fn ($q) => $q->whereDate(
+                    'work_date',
+                    '<=',
+                    $this->to_date
+                )
+            )
+            ->when(
+                $selectedZoneBlockIds !== null,
+                function ($q) use ($selectedZoneBlockIds) {
+                    if (empty($selectedZoneBlockIds)) {
+                        $q->whereRaw('1 = 0');
+
+                        return;
+                    }
+
+                    $q->whereIn(
+                        'zone_block_id',
+                        $selectedZoneBlockIds
+                    );
+                }
+            )
+            ->when(
+                $this->activity_id,
+                fn ($q) => $q->where(
+                    'task_category_id',
+                    (int) $this->activity_id
+                )
             )
             ->get();
 
         foreach ($logs as $log) {
-            $taskCategoryId = (int) $log->task_category_id;
+            $taskCategoryId =
+                (int) $log->task_category_id;
 
             if (!$taskCategoryId) {
                 continue;
             }
 
-            $current = $summary->get($taskCategoryId, [
-                'task_category_id' => $taskCategoryId,
-                'task_category' => optional($log->taskCategory)->name ?? '-',
-                'total_area' => 0,
-                'request_fuel' => 0,
-                'finish_area' => 0,
-                'consumed_fuel' => 0,
-                'total_working_hour' => 0,
-            ]);
+            $current = $summary->get(
+                $taskCategoryId,
+                [
+                    'task_category_id' => $taskCategoryId,
+                    'task_category' =>
+                        optional($log->taskCategory)->name ?? '-',
+                    'total_area' => 0,
+                    'request_fuel' => 0,
+                    'finish_area' => 0,
+                    'consumed_fuel' => 0,
+                    'total_working_hour' => 0,
+                ]
+            );
 
             if (
                 ($current['task_category'] ?? '-') === '-' &&
                 optional($log->taskCategory)->name
             ) {
-                $current['task_category'] = $log->taskCategory->name;
+                $current['task_category'] =
+                    $log->taskCategory->name;
             }
 
-            $current['finish_area'] += (float) $log->working_area;
-            $current['consumed_fuel'] += (float) $log->diesel_consumed;
-            $current['total_working_hour'] += (float) $log->working_duration;
+            $current['finish_area'] +=
+                (float) $log->working_area;
+
+            $current['consumed_fuel'] +=
+                (float) $log->diesel_consumed;
+
+            $current['total_working_hour'] +=
+                (float) $log->working_duration;
 
             $summary->put($taskCategoryId, $current);
         }
 
         return $summary
             ->map(function ($item) {
-                $totalArea = (float) $item['total_area'];
-                $finishArea = (float) $item['finish_area'];
-                $requestFuel = (float) $item['request_fuel'];
-                $consumedFuel = (float) $item['consumed_fuel'];
-                $totalWorkingHour = (float) $item['total_working_hour'];
+                $totalArea =
+                    (float) $item['total_area'];
 
-                $remainingArea = max($totalArea - $finishArea, 0);
+                $finishArea =
+                    (float) $item['finish_area'];
+
+                $requestFuel =
+                    (float) $item['request_fuel'];
+
+                $consumedFuel =
+                    (float) $item['consumed_fuel'];
+
+                $totalWorkingHour =
+                    (float) $item['total_working_hour'];
+
+                $remainingArea = max(
+                    $totalArea - $finishArea,
+                    0
+                );
 
                 // Weighted request rate. Never sum L/Ha rates.
                 $requestFuelPerHectare = $totalArea > 0
-                ? round($requestFuel / $totalArea, 2)
-                : 0;
-
-                $planUseFuel = $finishArea * $requestFuelPerHectare;
-
-                $consumedFuelPerHectare = $finishArea > 0
-                ? round($consumedFuel / $finishArea, 2)
-                : 0;
-
-                $remainingFuel = $requestFuel - $consumedFuel;
-
-                $remainingFuelPerHectare = $remainingArea > 0
-                    ? $remainingFuel / $remainingArea
+                    ? round(
+                        $requestFuel / $totalArea,
+                        2
+                    )
                     : 0;
+
+                $planUseFuel =
+                    $finishArea * $requestFuelPerHectare;
+
+                $consumedFuelPerHectare =
+                    $finishArea > 0
+                        ? round(
+                            $consumedFuel / $finishArea,
+                            2
+                        )
+                        : 0;
+
+                $remainingFuel =
+                    $requestFuel - $consumedFuel;
+
+                $remainingFuelPerHectare =
+                    $remainingArea > 0
+                        ? $remainingFuel / $remainingArea
+                        : 0;
 
                 // Positive = used less than the planned fuel for finished area.
                 // Negative = over-consumed.
-                $varianceFuel = $planUseFuel - $consumedFuel;
+                $varianceFuel =
+                    $planUseFuel - $consumedFuel;
 
                 $varianceFuelPerHectare = round(
-                    $requestFuelPerHectare - $consumedFuelPerHectare,
+                    $requestFuelPerHectare -
+                    $consumedFuelPerHectare,
                     2
                 );
 
-                $hectarePerHour = $totalWorkingHour > 0
-                    ? $finishArea / $totalWorkingHour
-                    : 0;
+                $hectarePerHour =
+                    $totalWorkingHour > 0
+                        ? $finishArea / $totalWorkingHour
+                        : 0;
 
                 return [
-                    'task_category_id' => $item['task_category_id'],
-                    'task_category' => $item['task_category'],
+                    'task_category_id' =>
+                        $item['task_category_id'],
 
-                    'total_area' => round($totalArea, 2),
-                    'finish_area' => round($finishArea, 2),
-                    'remaining_area' => round($remainingArea, 2),
+                    'task_category' =>
+                        $item['task_category'],
 
-                    'request_fuel_per_hectare' => round($requestFuelPerHectare, 2),
-                    'request_fuel' => round($requestFuel, 2),
-                    'plan_use_fuel' => round($planUseFuel, 2),
+                    'total_area' =>
+                        round($totalArea, 2),
 
-                    'consumed_fuel' => round($consumedFuel, 2),
-                    'consumed_fuel_per_hectare' => round($consumedFuelPerHectare, 2),
+                    'finish_area' =>
+                        round($finishArea, 2),
 
-                    'remaining_fuel' => round($remainingFuel, 2),
-                    'remaining_fuel_per_hectare' => round($remainingFuelPerHectare, 2),
+                    'remaining_area' =>
+                        round($remainingArea, 2),
 
-                    'variance_fuel' => round($varianceFuel, 2),
-                    'variance_fuel_per_hectare' => round($varianceFuelPerHectare, 2),
+                    'request_fuel_per_hectare' =>
+                        round(
+                            $requestFuelPerHectare,
+                            2
+                        ),
 
-                    'total_working_hour' => round($totalWorkingHour, 2),
-                    'hectare_per_hour' => round($hectarePerHour, 2),
+                    'request_fuel' =>
+                        round($requestFuel, 2),
+
+                    'plan_use_fuel' =>
+                        round($planUseFuel, 2),
+
+                    'consumed_fuel' =>
+                        round($consumedFuel, 2),
+
+                    'consumed_fuel_per_hectare' =>
+                        round(
+                            $consumedFuelPerHectare,
+                            2
+                        ),
+
+                    'remaining_fuel' =>
+                        round($remainingFuel, 2),
+
+                    'remaining_fuel_per_hectare' =>
+                        round(
+                            $remainingFuelPerHectare,
+                            2
+                        ),
+
+                    'variance_fuel' =>
+                        round($varianceFuel, 2),
+
+                    'variance_fuel_per_hectare' =>
+                        round(
+                            $varianceFuelPerHectare,
+                            2
+                        ),
+
+                    'total_working_hour' =>
+                        round($totalWorkingHour, 2),
+
+                    'hectare_per_hour' =>
+                        round($hectarePerHour, 2),
                 ];
             })
             ->sortBy('task_category')
@@ -268,17 +497,35 @@ new class extends Component
         $rowNumber = 2;
 
         foreach ($rows as $index => $row) {
-            $sheet->setCellValue('A' . $rowNumber, $index + 1);
-            $sheet->setCellValue('B' . $rowNumber, $row['task_category']);
+            $sheet->setCellValue(
+                'A' . $rowNumber,
+                $index + 1
+            );
+
+            $sheet->setCellValue(
+                'B' . $rowNumber,
+                $row['task_category']
+            );
 
             // Raw values from database aggregation.
-            $sheet->setCellValue('C' . $rowNumber, (float) $row['total_area']);
-            $sheet->setCellValue('D' . $rowNumber, (float) $row['finish_area']);
+            $sheet->setCellValue(
+                'C' . $rowNumber,
+                (float) $row['total_area']
+            );
+
+            $sheet->setCellValue(
+                'D' . $rowNumber,
+                (float) $row['finish_area']
+            );
 
             // E: Remaining Area = MAX(Total Area - Finish Area, 0)
             $sheet->setCellValue(
                 'E' . $rowNumber,
-                '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)'
+                '=MAX(C' .
+                $rowNumber .
+                '-D' .
+                $rowNumber .
+                ',0)'
             );
 
             /*
@@ -287,47 +534,85 @@ new class extends Component
              */
             $sheet->setCellValue(
                 'F' . $rowNumber,
-                '=IF(C' . $rowNumber . '>0,G' . $rowNumber . '/C' . $rowNumber . ',0)'
+                '=IF(C' .
+                $rowNumber .
+                '>0,G' .
+                $rowNumber .
+                '/C' .
+                $rowNumber .
+                ',0)'
             );
-            $sheet->setCellValue('G' . $rowNumber, (float) $row['request_fuel']);
+
+            $sheet->setCellValue(
+                'G' . $rowNumber,
+                (float) $row['request_fuel']
+            );
 
             // H: Planned fuel for the finished area.
             $sheet->setCellValue(
                 'H' . $rowNumber,
-                '=F' . $rowNumber . '*D' . $rowNumber
+                '=F' .
+                $rowNumber .
+                '*D' .
+                $rowNumber
             );
 
             // I: Actual consumed fuel from Work Logs.
-            $sheet->setCellValue('I' . $rowNumber, (float) $row['consumed_fuel']);
+            $sheet->setCellValue(
+                'I' . $rowNumber,
+                (float) $row['consumed_fuel']
+            );
 
             // J: Actual consumed fuel rate.
             $sheet->setCellValue(
                 'J' . $rowNumber,
-                '=IF(D' . $rowNumber . '>0,I' . $rowNumber . '/D' . $rowNumber . ',0)'
+                '=IF(D' .
+                $rowNumber .
+                '>0,I' .
+                $rowNumber .
+                '/D' .
+                $rowNumber .
+                ',0)'
             );
 
             // K: Remaining Fuel = Request Fuel - Consumed Fuel.
             $sheet->setCellValue(
                 'K' . $rowNumber,
-                '=G' . $rowNumber . '-I' . $rowNumber
+                '=G' .
+                $rowNumber .
+                '-I' .
+                $rowNumber
             );
 
             // L: Remaining Fuel per remaining hectare.
             $sheet->setCellValue(
                 'L' . $rowNumber,
-                '=IF(E' . $rowNumber . '>0,K' . $rowNumber . '/E' . $rowNumber . ',0)'
+                '=IF(E' .
+                $rowNumber .
+                '>0,K' .
+                $rowNumber .
+                '/E' .
+                $rowNumber .
+                ',0)'
             );
 
             // M: Variance = Planned use for finished area - Actual use.
             $sheet->setCellValue(
                 'M' . $rowNumber,
-                '=H' . $rowNumber . '-I' . $rowNumber
+                '=H' .
+                $rowNumber .
+                '-I' .
+                $rowNumber
             );
 
             // N: Rate variance = Planned rate - Actual rate.
             $sheet->setCellValue(
                 'N' . $rowNumber,
-                '=ROUND(F' . $rowNumber . ',2)-ROUND(J' . $rowNumber . ',2)'
+                '=ROUND(F' .
+                $rowNumber .
+                ',2)-ROUND(J' .
+                $rowNumber .
+                ',2)'
             );
 
             // O: Total working hour.
@@ -339,7 +624,13 @@ new class extends Component
             // P: Hectare per hour.
             $sheet->setCellValue(
                 'P' . $rowNumber,
-                '=IF(O' . $rowNumber . '>0,D' . $rowNumber . '/O' . $rowNumber . ',0)'
+                '=IF(O' .
+                $rowNumber .
+                '>0,D' .
+                $rowNumber .
+                '/O' .
+                $rowNumber .
+                ',0)'
             );
 
             $rowNumber++;
@@ -348,78 +639,163 @@ new class extends Component
         $lastDataRow = $rowNumber - 1;
 
         if ($lastDataRow >= 2) {
-            $sheet->setCellValue('B' . $rowNumber, 'Total');
+            $sheet->setCellValue(
+                'B' . $rowNumber,
+                'Total'
+            );
 
-            $sheet->setCellValue('C' . $rowNumber, '=SUM(C2:C' . $lastDataRow . ')');
-            $sheet->setCellValue('D' . $rowNumber, '=SUM(D2:D' . $lastDataRow . ')');
+            $sheet->setCellValue(
+                'C' . $rowNumber,
+                '=SUM(C2:C' . $lastDataRow . ')'
+            );
+
+            $sheet->setCellValue(
+                'D' . $rowNumber,
+                '=SUM(D2:D' . $lastDataRow . ')'
+            );
+
             $sheet->setCellValue(
                 'E' . $rowNumber,
-                '=MAX(C' . $rowNumber . '-D' . $rowNumber . ',0)'
+                '=MAX(C' .
+                $rowNumber .
+                '-D' .
+                $rowNumber .
+                ',0)'
             );
 
             // Weighted total request rate, not SUM(F).
             $sheet->setCellValue(
                 'F' . $rowNumber,
-                '=IF(C' . $rowNumber . '>0,G' . $rowNumber . '/C' . $rowNumber . ',0)'
+                '=IF(C' .
+                $rowNumber .
+                '>0,G' .
+                $rowNumber .
+                '/C' .
+                $rowNumber .
+                ',0)'
             );
 
-            $sheet->setCellValue('G' . $rowNumber, '=SUM(G2:G' . $lastDataRow . ')');
-            $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
-            $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
+            $sheet->setCellValue(
+                'G' . $rowNumber,
+                '=SUM(G2:G' . $lastDataRow . ')'
+            );
+
+            $sheet->setCellValue(
+                'H' . $rowNumber,
+                '=SUM(H2:H' . $lastDataRow . ')'
+            );
+
+            $sheet->setCellValue(
+                'I' . $rowNumber,
+                '=SUM(I2:I' . $lastDataRow . ')'
+            );
 
             $sheet->setCellValue(
                 'J' . $rowNumber,
-                '=IF(D' . $rowNumber . '>0,I' . $rowNumber . '/D' . $rowNumber . ',0)'
+                '=IF(D' .
+                $rowNumber .
+                '>0,I' .
+                $rowNumber .
+                '/D' .
+                $rowNumber .
+                ',0)'
             );
 
             $sheet->setCellValue(
                 'K' . $rowNumber,
-                '=G' . $rowNumber . '-I' . $rowNumber
+                '=G' .
+                $rowNumber .
+                '-I' .
+                $rowNumber
             );
 
             $sheet->setCellValue(
                 'L' . $rowNumber,
-                '=IF(E' . $rowNumber . '>0,K' . $rowNumber . '/E' . $rowNumber . ',0)'
+                '=IF(E' .
+                $rowNumber .
+                '>0,K' .
+                $rowNumber .
+                '/E' .
+                $rowNumber .
+                ',0)'
             );
 
             $sheet->setCellValue(
                 'M' . $rowNumber,
-                '=H' . $rowNumber . '-I' . $rowNumber
+                '=H' .
+                $rowNumber .
+                '-I' .
+                $rowNumber
             );
 
             $sheet->setCellValue(
                 'N' . $rowNumber,
-                '=ROUND(F' . $rowNumber . ',2)-ROUND(J' . $rowNumber . ',2)'
+                '=ROUND(F' .
+                $rowNumber .
+                ',2)-ROUND(J' .
+                $rowNumber .
+                ',2)'
             );
 
-            $sheet->setCellValue('O' . $rowNumber, '=SUM(O2:O' . $lastDataRow . ')');
+            $sheet->setCellValue(
+                'O' . $rowNumber,
+                '=SUM(O2:O' . $lastDataRow . ')'
+            );
 
             $sheet->setCellValue(
                 'P' . $rowNumber,
-                '=IF(O' . $rowNumber . '>0,D' . $rowNumber . '/O' . $rowNumber . ',0)'
+                '=IF(O' .
+                $rowNumber .
+                '>0,D' .
+                $rowNumber .
+                '/O' .
+                $rowNumber .
+                ',0)'
             );
         }
 
         $highestRow = $sheet->getHighestRow();
 
-        $sheet->getStyle('A1:P1')->getFont()->setBold(true);
-        $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)
+        $sheet
+            ->getStyle('A1:P1')
             ->getFont()
             ->setBold(true);
 
-        $sheet->getStyle('A1:P1')
+        $sheet
+            ->getStyle(
+                'A' .
+                $highestRow .
+                ':P' .
+                $highestRow
+            )
+            ->getFont()
+            ->setBold(true);
+
+        $sheet
+            ->getStyle('A1:P1')
             ->getFill()
-            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->setFillType(
+                \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID
+            )
             ->getStartColor()
             ->setARGB('FFDCFCE7');
 
-        $sheet->getStyle('A' . $highestRow . ':P' . $highestRow)
+        $sheet
+            ->getStyle(
+                'A' .
+                $highestRow .
+                ':P' .
+                $highestRow
+            )
             ->getFill()
-            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->setFillType(
+                \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID
+            )
             ->getStartColor()
             ->setARGB('FFF0FDF4');
 
-        $sheet->getStyle('A1:P' . $highestRow)
+        $sheet
+            ->getStyle('A1:P' . $highestRow)
             ->getBorders()
             ->getAllBorders()
             ->setBorderStyle(
@@ -428,33 +804,42 @@ new class extends Component
             ->getColor()
             ->setARGB('FFE5E7EB');
 
-        $sheet->getStyle('C2:P' . $highestRow)
+        $sheet
+            ->getStyle('C2:P' . $highestRow)
             ->getNumberFormat()
             ->setFormatCode('#,##0.00');
 
         foreach (range('A', 'P') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
+            $sheet
+                ->getColumnDimension($column)
+                ->setAutoSize(true);
         }
 
         $sheet->freezePane('C2');
         $sheet->setAutoFilter('A1:P1');
 
         $filename =
-            'task-category-summary-' . now()->format('Y-m-d-His') . '.xlsx';
+            'task-category-summary-' .
+            now()->format('Y-m-d-His') .
+            '.xlsx';
 
-        return response()->streamDownload(function () use ($spreadsheet) {
-            $writer = new Xlsx($spreadsheet);
+        return response()->streamDownload(
+            function () use ($spreadsheet) {
+                $writer = new Xlsx($spreadsheet);
 
-            /*
-             * Keep formulas inside the downloaded workbook.
-             * Excel/LibreOffice recalculates them when the file opens.
-             */
-            $writer->setPreCalculateFormulas(false);
-            $writer->save('php://output');
-        }, $filename, [
-            'Content-Type' =>
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
+                /*
+                 * Keep formulas inside the downloaded workbook.
+                 * Excel/LibreOffice recalculates them when the file opens.
+                 */
+                $writer->setPreCalculateFormulas(false);
+                $writer->save('php://output');
+            },
+            $filename,
+            [
+                'Content-Type' =>
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ]
+        );
     }
 
     public function exportCsv()
@@ -462,66 +847,110 @@ new class extends Component
         $rows = $this->buildRows();
 
         $filename =
-            'task-category-summary-' . now()->format('Y-m-d-His') . '.csv';
+            'task-category-summary-' .
+            now()->format('Y-m-d-His') .
+            '.csv';
 
-        return response()->streamDownload(function () use ($rows) {
-            $handle = fopen('php://output', 'w');
+        return response()->streamDownload(
+            function () use ($rows) {
+                $handle = fopen(
+                    'php://output',
+                    'w'
+                );
 
-            // UTF-8 BOM for Excel.
-            fwrite($handle, "\xEF\xBB\xBF");
+                // UTF-8 BOM for Excel.
+                fwrite(
+                    $handle,
+                    "\xEF\xBB\xBF"
+                );
 
-            fputcsv($handle, [
-                'No',
-                'Task Category',
-                'Total Area (Hec)',
-                'Finish Area (Hec)',
-                'Remaining Area (Hec)',
-                'Request Fuel (L/Hec)',
-                'Request Fuel (L)',
-                'Plan Use Fuel (L)',
-                'Consumed Fuel (L)',
-                'Consumed Fuel (L/Hec)',
-                'Remaining Fuel (L)',
-                'Remaining Fuel (L/Hec)',
-                'Variance Fuel (L)',
-                'Variance Fuel (L/Hec)',
-                'Total Working Hour (Hr)',
-                'Hectare/Hour',
-            ]);
+                fputcsv(
+                    $handle,
+                    [
+                        'No',
+                        'Task Category',
+                        'Total Area (Hec)',
+                        'Finish Area (Hec)',
+                        'Remaining Area (Hec)',
+                        'Request Fuel (L/Hec)',
+                        'Request Fuel (L)',
+                        'Plan Use Fuel (L)',
+                        'Consumed Fuel (L)',
+                        'Consumed Fuel (L/Hec)',
+                        'Remaining Fuel (L)',
+                        'Remaining Fuel (L/Hec)',
+                        'Variance Fuel (L)',
+                        'Variance Fuel (L/Hec)',
+                        'Total Working Hour (Hr)',
+                        'Hectare/Hour',
+                    ]
+                );
 
-            foreach ($rows as $index => $row) {
-                fputcsv($handle, [
-                    $index + 1,
-                    $row['task_category'],
-                    $row['total_area'],
-                    $row['finish_area'],
-                    $row['remaining_area'],
-                    $row['request_fuel_per_hectare'],
-                    $row['request_fuel'],
-                    $row['plan_use_fuel'],
-                    $row['consumed_fuel'],
-                    $row['consumed_fuel_per_hectare'],
-                    $row['remaining_fuel'],
-                    $row['remaining_fuel_per_hectare'],
-                    $row['variance_fuel'],
-                    $row['variance_fuel_per_hectare'],
-                    $row['total_working_hour'],
-                    $row['hectare_per_hour'],
-                ]);
-            }
+                foreach ($rows as $index => $row) {
+                    fputcsv(
+                        $handle,
+                        [
+                            $index + 1,
+                            $row['task_category'],
+                            $row['total_area'],
+                            $row['finish_area'],
+                            $row['remaining_area'],
+                            $row['request_fuel_per_hectare'],
+                            $row['request_fuel'],
+                            $row['plan_use_fuel'],
+                            $row['consumed_fuel'],
+                            $row['consumed_fuel_per_hectare'],
+                            $row['remaining_fuel'],
+                            $row['remaining_fuel_per_hectare'],
+                            $row['variance_fuel'],
+                            $row['variance_fuel_per_hectare'],
+                            $row['total_working_hour'],
+                            $row['hectare_per_hour'],
+                        ]
+                    );
+                }
 
-            fclose($handle);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+                fclose($handle);
+            },
+            $filename,
+            [
+                'Content-Type' =>
+                    'text/csv; charset=UTF-8',
+            ]
+        );
     }
 
-    public function with()
-    {
-        return [
-            'rows' => $this->buildRows(),
-        ];
-    }
+   public function with()
+{
+    return [
+        'rows' => $this->buildRows(),
+
+        'zones' => Zone::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+            ]),
+
+        'zoneBlocks' => $this->zone_id
+            ? ZoneBlock::query()
+                ->where('zone_id', $this->zone_id)
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'zone_id',
+                    'name',
+                ])
+            : collect(),
+
+        'activities' => TaskCategory::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+            ]),
+    ];
+}
 };
 
 ?>
@@ -561,7 +990,8 @@ new class extends Component
             margin-bottom: 7px;
         }
 
-        .form-grid input[type="date"] {
+        .form-grid input[type="date"],
+        .form-grid select {
             width: 100%;
             height: 46px;
             border: 1px solid #d1d5db;
@@ -573,8 +1003,27 @@ new class extends Component
             outline: none;
             transition: 0.15s ease;
         }
+        .form-grid select.zone-block-select {
+    color: #0f172a !important;
+    background-color: #ffffff !important;
+    font-weight: 800;
+    color-scheme: light;
+}
+.form-grid select.zone-block-select option {
+    color: #0f172a;
+    background-color: #ffffff;
+    font-weight: 800;
+}
 
-        .form-grid input[type="date"]:focus {
+.form-grid select.zone-block-select:disabled {
+    color: #94a3b8 !important;
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
+}
+
+        .form-grid input[type="date"]:focus,
+        .form-grid select:focus {
             border-color: #16a34a;
             box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
         }
@@ -700,34 +1149,34 @@ new class extends Component
             background: #f8fafc;
         }
 
-       .table-wrap th:first-child,
-.table-wrap td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 4;
-    background: #ffffff;
-    width: 70px;
-    min-width: 70px;
-    text-align: center;
-}
+        .table-wrap th:first-child,
+        .table-wrap td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            background: #ffffff;
+            width: 70px;
+            min-width: 70px;
+            text-align: center;
+        }
 
-.table-wrap th:first-child {
-    background: #f8fafc;
-    z-index: 5;
-}
+        .table-wrap th:first-child {
+            background: #f8fafc;
+            z-index: 5;
+        }
 
-/* Fix lost text issue: do not make Task Category sticky */
-.table-wrap th:nth-child(2),
-.table-wrap td:nth-child(2) {
-    position: static;
-    min-width: 220px;
-    background: #ffffff;
-    box-shadow: none;
-}
+        /* Fix lost text issue: do not make Task Category sticky */
+        .table-wrap th:nth-child(2),
+        .table-wrap td:nth-child(2) {
+            position: static;
+            min-width: 220px;
+            background: #ffffff;
+            box-shadow: none;
+        }
 
-.table-wrap th:nth-child(2) {
-    background: #f8fafc;
-}
+        .table-wrap th:nth-child(2) {
+            background: #f8fafc;
+        }
 
         .table-wrap td:nth-child(n+3) {
             text-align: right;
@@ -756,6 +1205,13 @@ new class extends Component
             background: #fee2e2;
             color: #b91c1c !important;
         }
+        .form-grid select:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
+    box-shadow: none;
+}
 
         .empty {
             padding: 38px 20px !important;
@@ -776,7 +1232,8 @@ new class extends Component
 
         @media (max-width: 1300px) {
             .form-grid {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-columns:
+                    repeat(3, minmax(0, 1fr));
             }
         }
 
@@ -799,55 +1256,173 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">{{ __('pages.task_category_summary_report') }}</h1>
-            <p class="page-subtitle">{{ __('pages.task_category_summary_report_subtitle') }}</p>
+            <h1 class="page-title">
+                {{ __('pages.task_category_summary_report') }}
+            </h1>
+
+            <p class="page-subtitle">
+                {{ __('pages.task_category_summary_report_subtitle') }}
+            </p>
         </div>
 
         <div class="page-actions">
             <div class="language-switcher">
-                <a href="{{ route('language.switch', 'en') }}"
-                   class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}">
+                <a
+                    href="{{ route('language.switch', 'en') }}"
+                    class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}"
+                >
                     EN
                 </a>
 
-                <a href="{{ route('language.switch', 'km') }}"
-                   class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}">
+                <a
+                    href="{{ route('language.switch', 'km') }}"
+                    class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}"
+                >
                     ខ្មែរ
                 </a>
             </div>
 
-            <a href="{{ route('dashboard') }}" class="btn gray">
+            <a
+                href="{{ route('dashboard') }}"
+                class="btn gray"
+            >
                 {{ __('pages.dashboard_button') }}
             </a>
         </div>
     </div>
 
     <div class="panel">
-        <div class="form-grid" style="align-items: end;">
+        <div
+            class="form-grid"
+            style="align-items: end;"
+        >
             <div>
-                <label>{{ __('pages.from_date') }}</label>
-                <input type="date" wire:model.live="from_date">
+                <label>
+                    {{ __('pages.from_date') }}
+                </label>
+
+                <input
+                    type="date"
+                    wire:model.live="from_date"
+                >
             </div>
 
             <div>
-                <label>{{ __('pages.to_date') }}</label>
-                <input type="date" wire:model.live="to_date">
+                <label>
+                    {{ __('pages.to_date') }}
+                </label>
+
+                <input
+                    type="date"
+                    wire:model.live="to_date"
+                >
             </div>
 
             <div>
-                <button wire:click="$refresh" class="btn">
+                <label>
+                    {{ trans()->has('pages.zone')
+                        ? __('pages.zone')
+                        : 'Zone' }}
+                </label>
+
+                <select wire:model.live="zone_id">
+                    <option value="">
+                        {{ trans()->has('pages.all_zones')
+                            ? __('pages.all_zones')
+                            : 'All Zones' }}
+                    </option>
+
+                    @foreach($zones as $zone)
+                        <option value="{{ $zone->id }}">
+                            {{ $zone->name }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div>
+    <label>
+        {{ trans()->has('pages.zone_block')
+            ? __('pages.zone_block')
+            : 'Zone Block' }}
+    </label>
+
+    <select
+    class="zone-block-select"
+    wire:model.live="zone_block_id"
+    wire:key="zone-block-select-{{ $zone_id ?: 'none' }}"
+    @disabled(!$zone_id)
+>
+    @if(!$zone_id)
+        <option value="">
+            Select Zone First
+        </option>
+    @else
+        <option value="">
+            {{ trans()->has('pages.all_zone_blocks')
+                ? __('pages.all_zone_blocks')
+                : 'All Zone Blocks' }}
+        </option>
+
+        @foreach($zoneBlocks as $zoneBlock)
+            <option value="{{ $zoneBlock->id }}">
+                {{ filled(trim((string) $zoneBlock->name))
+                    ? $zoneBlock->name
+                    : 'Zone Block #' . $zoneBlock->id }}
+            </option>
+        @endforeach
+    @endif
+</select>
+</div>
+
+            <div>
+                <label>
+                    {{ trans()->has('pages.activity')
+                        ? __('pages.activity')
+                        : 'Activity' }}
+                </label>
+
+                <select wire:model.live="activity_id">
+                    <option value="">
+                        {{ trans()->has('pages.all_activities')
+                            ? __('pages.all_activities')
+                            : 'All Activities' }}
+                    </option>
+
+                    @foreach($activities as $activity)
+                        <option value="{{ $activity->id }}">
+                            {{ $activity->name }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div>
+                <button
+                    type="button"
+                    wire:click="$refresh"
+                    class="btn"
+                >
                     {{ __('pages.filter') }}
                 </button>
             </div>
 
             <div>
-                <button wire:click="resetFilter" class="btn light">
+                <button
+                    type="button"
+                    wire:click="resetFilter"
+                    class="btn light"
+                >
                     {{ __('pages.reset') }}
                 </button>
             </div>
 
             <div>
-                <button type="button" wire:click="exportExcel" class="btn">
+                <button
+                    type="button"
+                    wire:click="exportExcel"
+                    class="btn"
+                >
                     {{ __('pages.export_excel') }}
                 </button>
             </div>
@@ -863,71 +1438,204 @@ new class extends Component
             </div>
         </div>
 
-        <div class="table-wrap" style="margin-top: 18px;">
+        <div
+            class="table-wrap"
+            style="margin-top: 18px;"
+        >
             <table>
                 <thead>
                     <tr>
-                        <th>{{ __('pages.no') }}</th>
-                        <th>{{ __('pages.task_category') }}</th>
-                        <th>{{ __('pages.total_area_hec') }}</th>
-                        <th>{{ __('pages.finish_area_hec') }}</th>
-                        <th>{{ __('pages.remaining_area_hec') }}</th>
-                        <th>{{ __('pages.request_fuel_l_hec') }}</th>
-                        <th>{{ __('pages.request_fuel_l') }}</th>
+                        <th>
+                            {{ __('pages.no') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.task_category') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.total_area_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.finish_area_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.remaining_area_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.request_fuel_l_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.request_fuel_l') }}
+                        </th>
+
                         <th>
                             {{ trans()->has('pages.plan_use_fuel_l')
                                 ? __('pages.plan_use_fuel_l')
                                 : 'Plan Use Fuel (L)' }}
                         </th>
-                        <th>{{ __('pages.consumed_fuel_l') }}</th>
-                        <th>{{ __('pages.consumed_fuel_l_hec') }}</th>
-                        <th>{{ __('pages.remaining_fuel_l') }}</th>
-                        <th>{{ __('pages.remaining_fuel_l_hec') }}</th>
-                        <th>{{ __('pages.variance_fuel_l') }}</th>
-                        <th>{{ __('pages.variance_fuel_l_hec') }}</th>
-                        <th>{{ __('pages.total_working_hour_hr') }}</th>
-                        <th>{{ __('pages.total_working_hour_hec_hr') }}</th>
+
+                        <th>
+                            {{ __('pages.consumed_fuel_l') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.consumed_fuel_l_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.remaining_fuel_l') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.remaining_fuel_l_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.variance_fuel_l') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.variance_fuel_l_hec') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.total_working_hour_hr') }}
+                        </th>
+
+                        <th>
+                            {{ __('pages.total_working_hour_hec_hr') }}
+                        </th>
                     </tr>
                 </thead>
 
                 <tbody>
                     @forelse($rows as $index => $row)
                         <tr>
-                            <td>{{ $index + 1 }}</td>
-                            <td>{{ $row['task_category'] }}</td>
-
-                            <td>{{ number_format($row['total_area'], 2) }}</td>
-                            <td>{{ number_format($row['finish_area'], 2) }}</td>
-                            <td>{{ number_format($row['remaining_area'], 2) }}</td>
-
-                            <td>{{ number_format($row['request_fuel_per_hectare'], 2) }}</td>
-                            <td>{{ number_format($row['request_fuel'], 2) }}</td>
-                            <td>{{ number_format($row['plan_use_fuel'], 2) }}</td>
-
-                            <td>{{ number_format($row['consumed_fuel'], 2) }}</td>
-                            <td>{{ number_format($row['consumed_fuel_per_hectare'], 2) }}</td>
-
-                            <td>{{ number_format($row['remaining_fuel'], 2) }}</td>
-                            <td>{{ number_format($row['remaining_fuel_per_hectare'], 2) }}</td>
+                            <td>
+                                {{ $index + 1 }}
+                            </td>
 
                             <td>
-                                <strong style="color: {{ $row['variance_fuel'] > 0 ? '#dc2626' : '#166534' }}">
-                                    {{ number_format($row['variance_fuel'], 2) }}
+                                {{ $row['task_category'] }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['total_area'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['finish_area'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['remaining_area'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['request_fuel_per_hectare'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['request_fuel'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['plan_use_fuel'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['consumed_fuel'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['consumed_fuel_per_hectare'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['remaining_fuel'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['remaining_fuel_per_hectare'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                <strong
+                                    style="color: {{ $row['variance_fuel'] < 0 ? '#dc2626' : '#166534' }}"
+                                >
+                                    {{ number_format(
+                                        $row['variance_fuel'],
+                                        2
+                                    ) }}
                                 </strong>
                             </td>
 
                             <td>
-                                <strong style="color: {{ $row['variance_fuel_per_hectare'] > 0 ? '#dc2626' : '#166534' }}">
-                                    {{ number_format($row['variance_fuel_per_hectare'], 2) }}
+                                <strong
+                                    style="color: {{ $row['variance_fuel_per_hectare'] < 0 ? '#dc2626' : '#166534' }}"
+                                >
+                                    {{ number_format(
+                                        $row['variance_fuel_per_hectare'],
+                                        2
+                                    ) }}
                                 </strong>
                             </td>
 
-                            <td>{{ number_format($row['total_working_hour'], 2) }}</td>
-                            <td>{{ number_format($row['hectare_per_hour'], 2) }}</td>
+                            <td>
+                                {{ number_format(
+                                    $row['total_working_hour'],
+                                    2
+                                ) }}
+                            </td>
+
+                            <td>
+                                {{ number_format(
+                                    $row['hectare_per_hour'],
+                                    2
+                                ) }}
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="16" class="empty">
+                            <td
+                                colspan="16"
+                                class="empty"
+                            >
                                 {{ __('pages.no_report_data_found') }}
                             </td>
                         </tr>

@@ -9,6 +9,7 @@ use App\Http\Controllers\TaskCategorySummaryReportController;
 use App\Http\Controllers\AiHelpController;
 use App\Http\Controllers\DriverMobileWorkController;
 use Livewire\Volt\Volt;
+use App\Http\Controllers\TaskCategoryGroupController;
 
 Route::middleware(['setLocale'])->group(function () {
     Route::get('/', function () {
@@ -241,6 +242,11 @@ Route::middleware(['auth', 'setLocale'])->group(function () {
         ->middleware('permission:users.edit')
         ->name('users.edit');
 
+
+    Route::resource(
+        'task-category-groups',
+        TaskCategoryGroupController::class
+    )->except('show');
     /*
     |--------------------------------------------------------------------------
     | Roles

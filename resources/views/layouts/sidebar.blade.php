@@ -79,6 +79,7 @@
         request()->routeIs('zones.*') ||
         request()->routeIs('zone-blocks.*') ||
         request()->routeIs('task-categories.*') ||
+        request()->routeIs('task-category-groups.*') ||
         request()->routeIs('planting-cycle-types.*');
 @endphp
 
@@ -134,14 +135,32 @@
     }
 
     .farm-dropdown-body {
-        padding: 2px 0 8px;
-    }
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 2px 0 8px;
+}
 
-    .farm-dropdown-body .farm-menu-link {
-        margin-left: 14px;
-        margin-right: 10px;
-        padding-left: 16px;
-    }
+.farm-dropdown-body .farm-menu-link {
+    display: flex;
+    align-items: center;
+    width: auto;
+    min-width: 0;
+    margin: 2px 10px 2px 14px;
+    padding-left: 16px;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+
+.farm-dropdown-body .farm-menu-link .farm-menu-icon {
+    flex: 0 0 22px;
+}
+
+.farm-dropdown-body .farm-menu-link span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 </style>
 
 <aside id="farmSidebar" class="farm-sidebar">
@@ -387,9 +406,16 @@
                     @endif
 
                     @if($showTaskCategories && $user->hasPermission('task_categories.view'))
+                        <a href="{{ route('task-category-groups.index') }}"
+                        class="farm-menu-link {{ request()->routeIs('task-category-groups.*') ? 'active' : '' }}"
+                        title="Task Category Groups">
+                            <span class="farm-menu-icon">📁</span>
+                            <span>Task Category Groups</span>
+                        </a>
+
                         <a href="{{ route('task-categories.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('task-categories.*') ? 'active' : '' }}"
-                           title="{{ __('sidebar.task_categories') }}">
+                        class="farm-menu-link {{ request()->routeIs('task-categories.*') ? 'active' : '' }}"
+                        title="{{ __('sidebar.task_categories') }}">
                             <span class="farm-menu-icon">🌾</span>
                             <span>{{ __('sidebar.task_categories') }}</span>
                         </a>

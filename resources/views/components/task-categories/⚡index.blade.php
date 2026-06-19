@@ -2,6 +2,7 @@
 
 use Livewire\Component;
 use App\Models\TaskCategory;
+use App\Models\TaskCategoryGroup;
 use Illuminate\Support\Facades\Auth;
 
 new class extends Component
@@ -12,6 +13,7 @@ new class extends Component
     public $editingId = null;
 
     public $editRow = [
+        'task_category_group_id' => '',
         'name' => '',
         'standard_fuel_per_hectare' => '',
         'standard_hectare_per_hour' => '',
@@ -27,6 +29,7 @@ new class extends Component
     public function emptyRow()
     {
         return [
+            'task_category_group_id' => '',
             'name' => '',
             'standard_fuel_per_hectare' => '',
             'standard_hectare_per_hour' => '',
@@ -45,41 +48,53 @@ new class extends Component
         $this->rows = array_values($this->rows);
     }
 
-    public function saveRow($index)
-    {
-        if (!auth()->user()->hasPermission('task_categories.create')) {
-            abort(403, 'Permission denied.');
-        }
+    public function updatedRows($value, $key)
+{
+    $this->resetValidation('rows.' . $key);
+}
 
-        if (!isset($this->rows[$index])) {
-            return;
-        }
+public function updatedEditRow($value, $key)
+{
+    $this->resetValidation('editRow.' . $key);
+}
 
-        $this->validate([
-            "rows.$index.name" => 'required|string|max:150',
-            "rows.$index.standard_fuel_per_hectare" => 'nullable|numeric|min:0',
-            "rows.$index.standard_hectare_per_hour" => 'nullable|numeric|min:0',
-            "rows.$index.description" => 'nullable|string|max:1000',
-            "rows.$index.status" => 'required|in:active,inactive',
-        ]);
-
-        $row = $this->rows[$index];
-
-        TaskCategory::create([
-            'name' => $row['name'],
-            'standard_fuel_per_hectare' => $row['standard_fuel_per_hectare'] ?: 0,
-            'standard_hectare_per_hour' => $row['standard_hectare_per_hour'] ?: 0,
-            'description' => $row['description'] ?: null,
-            'status' => $row['status'],
-            'created_by' => Auth::id(),
-            'updated_by' => Auth::id(),
-        ]);
-
-        unset($this->rows[$index]);
-        $this->rows = array_values($this->rows);
-
-        session()->flash('success', 'Task category saved successfully.');
+public function saveRow($index)
+{
+    if (!auth()->user()->hasPermission('task_categories.create')) {
+        abort(403, 'Permission denied.');
     }
+
+    if (!isset($this->rows[$index])) {
+        return;
+    }
+
+    $this->validate([
+        "rows.$index.task_category_group_id" => 'required|exists:task_category_groups,id',
+        "rows.$index.name" => 'required|string|max:150',
+        "rows.$index.standard_fuel_per_hectare" => 'nullable|numeric|min:0',
+        "rows.$index.standard_hectare_per_hour" => 'nullable|numeric|min:0',
+        "rows.$index.description" => 'nullable|string|max:1000',
+        "rows.$index.status" => 'required|in:active,inactive',
+    ]);
+
+    $row = $this->rows[$index];
+
+    TaskCategory::create([
+        'task_category_group_id' => $row['task_category_group_id'],
+        'name' => $row['name'],
+        'standard_fuel_per_hectare' => $row['standard_fuel_per_hectare'] ?: 0,
+        'standard_hectare_per_hour' => $row['standard_hectare_per_hour'] ?: 0,
+        'description' => $row['description'] ?: null,
+        'status' => $row['status'],
+        'created_by' => Auth::id(),
+        'updated_by' => Auth::id(),
+    ]);
+
+    unset($this->rows[$index]);
+    $this->rows = array_values($this->rows);
+
+    session()->flash('success', 'Task category saved successfully.');
+}
 
     public function edit($id)
     {
@@ -92,6 +107,7 @@ new class extends Component
         $this->editingId = $taskCategory->id;
 
         $this->editRow = [
+            'task_category_group_id' => $taskCategory->task_category_group_id,
             'name' => $taskCategory->name,
             'standard_fuel_per_hectare' => $taskCategory->standard_fuel_per_hectare,
             'standard_hectare_per_hour' => $taskCategory->standard_hectare_per_hour,
@@ -105,6 +121,7 @@ new class extends Component
         $this->editingId = null;
 
         $this->editRow = [
+            'task_category_group_id' => '',
             'name' => '',
             'standard_fuel_per_hectare' => '',
             'standard_hectare_per_hour' => '',
@@ -122,6 +139,7 @@ new class extends Component
         $taskCategory = TaskCategory::findOrFail($this->editingId);
 
         $this->validate([
+            'editRow.task_category_group_id' => 'required|exists:task_category_groups,id',
             'editRow.name' => 'required|string|max:150',
             'editRow.standard_fuel_per_hectare' => 'nullable|numeric|min:0',
             'editRow.standard_hectare_per_hour' => 'nullable|numeric|min:0',
@@ -130,6 +148,7 @@ new class extends Component
         ]);
 
         $taskCategory->update([
+            'task_category_group_id' => $this->editRow['task_category_group_id'],
             'name' => $this->editRow['name'],
             'standard_fuel_per_hectare' => $this->editRow['standard_fuel_per_hectare'] ?: 0,
             'standard_hectare_per_hour' => $this->editRow['standard_hectare_per_hour'] ?: 0,
@@ -154,14 +173,29 @@ new class extends Component
         session()->flash('success', 'Task category deleted successfully.');
     }
 
+    public function getTaskCategoryGroupsProperty()
+    {
+        return TaskCategoryGroup::query()
+            ->orderBy('name')
+            ->get();
+    }
+
     public function getTaskCategoriesProperty()
     {
         return TaskCategory::query()
+            ->with('group')
             ->when($this->search, function ($q) {
                 $q->where(function ($query) {
                     $query->where('name', 'like', '%' . $this->search . '%')
                         ->orWhere('description', 'like', '%' . $this->search . '%')
-                        ->orWhere('status', 'like', '%' . $this->search . '%');
+                        ->orWhere('status', 'like', '%' . $this->search . '%')
+                        ->orWhereHas('group', function ($groupQuery) {
+                            $groupQuery->where(
+                                'name',
+                                'like',
+                                '%' . $this->search . '%'
+                            );
+                        });
                 });
             })
             ->orderBy('name')
@@ -230,7 +264,7 @@ new class extends Component
 
         .master-table {
             width: 100%;
-            min-width: 1180px;
+            min-width: 1320px;
             border-collapse: collapse;
             background: #ffffff;
         }
@@ -264,6 +298,10 @@ new class extends Component
             font-size: 13px;
             background: #ffffff;
             font-weight: 700;
+        }
+
+        .group-select {
+            min-width: 190px !important;
         }
 
         .wide-input {
@@ -349,7 +387,6 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.task_categories') }}</h1>
-            
         </div>
 
         <div class="page-actions">
@@ -376,7 +413,7 @@ new class extends Component
             <div class="filter-box">
                 <input type="text"
                        wire:model.live="search"
-                       placeholder="Filter name, description, status">
+                       placeholder="Filter group, name, description, status">
             </div>
         </div>
 
@@ -385,6 +422,7 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th>Group *</th>
                         <th>Name *</th>
                         <th>Fuel / Ha</th>
                         <th>Ha / Hr</th>
@@ -401,7 +439,27 @@ new class extends Component
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
+                                    <select
+                                        class="group-select"
+                                        wire:model.live="editRow.task_category_group_id"
+                                    >
+                                        <option value="">Select Group</option>
+
+                                        @foreach($this->taskCategoryGroups as $group)
+                                            <option value="{{ $group->id }}">
+                                                {{ $group->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+
+                                    @error('editRow.task_category_group_id')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
                                     <input type="text" wire:model.live="editRow.name">
+
                                     @error('editRow.name')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -411,6 +469,7 @@ new class extends Component
                                     <input type="number"
                                            step="0.01"
                                            wire:model.live="editRow.standard_fuel_per_hectare">
+
                                     @error('editRow.standard_fuel_per_hectare')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -420,6 +479,7 @@ new class extends Component
                                     <input type="number"
                                            step="0.01"
                                            wire:model.live="editRow.standard_hectare_per_hour">
+
                                     @error('editRow.standard_hectare_per_hour')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -429,6 +489,7 @@ new class extends Component
                                     <input type="text"
                                            class="wide-input"
                                            wire:model.live="editRow.description">
+
                                     @error('editRow.description')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -439,6 +500,7 @@ new class extends Component
                                         <option value="active">Active</option>
                                         <option value="inactive">Inactive</option>
                                     </select>
+
                                     @error('editRow.status')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -464,11 +526,19 @@ new class extends Component
                             <tr>
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
+                                <td>
+                                    {{ $taskCategory->group?->name ?? '-' }}
+                                </td>
+
                                 <td>{{ $taskCategory->name }}</td>
 
-                                <td>{{ number_format((float) $taskCategory->standard_fuel_per_hectare, 2) }}</td>
+                                <td>
+                                    {{ number_format((float) $taskCategory->standard_fuel_per_hectare, 2) }}
+                                </td>
 
-                                <td>{{ number_format((float) $taskCategory->standard_hectare_per_hour, 2) }}</td>
+                                <td>
+                                    {{ number_format((float) $taskCategory->standard_hectare_per_hour, 2) }}
+                                </td>
 
                                 <td>{{ $taskCategory->description ?? '-' }}</td>
 
@@ -503,7 +573,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="7" class="empty">
+                                <td colspan="8" class="empty">
                                     No task category found.
                                 </td>
                             </tr>
@@ -522,9 +592,29 @@ new class extends Component
                             </td>
 
                             <td>
+                                <select
+                                    class="group-select"
+                                    wire:model.live="rows.{{ $index }}.task_category_group_id"
+                                >
+                                    <option value="">Select Group</option>
+
+                                    @foreach($this->taskCategoryGroups as $group)
+                                        <option value="{{ $group->id }}">
+                                            {{ $group->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                @error("rows.$index.task_category_group_id")
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
                                 <input type="text"
                                        wire:model.live="rows.{{ $index }}.name"
                                        placeholder="Fertilizer">
+
                                 @error("rows.$index.name")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -535,6 +625,7 @@ new class extends Component
                                        step="0.01"
                                        wire:model.live="rows.{{ $index }}.standard_fuel_per_hectare"
                                        placeholder="0">
+
                                 @error("rows.$index.standard_fuel_per_hectare")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -545,6 +636,7 @@ new class extends Component
                                        step="0.01"
                                        wire:model.live="rows.{{ $index }}.standard_hectare_per_hour"
                                        placeholder="0">
+
                                 @error("rows.$index.standard_hectare_per_hour")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -555,6 +647,7 @@ new class extends Component
                                        class="wide-input"
                                        wire:model.live="rows.{{ $index }}.description"
                                        placeholder="Description">
+
                                 @error("rows.$index.description")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -565,6 +658,7 @@ new class extends Component
                                     <option value="active">Active</option>
                                     <option value="inactive">Inactive</option>
                                 </select>
+
                                 @error("rows.$index.status")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -603,6 +697,8 @@ new class extends Component
                                 -
                             @endif
                         </td>
+
+                        <td>-</td>
 
                         <td class="total-label">
                             Total: {{ number_format((int) $this->totalTaskCategories) }}

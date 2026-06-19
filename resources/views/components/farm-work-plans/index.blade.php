@@ -4,9 +4,11 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\FarmWorkPlan;
 use App\Models\TaskCategory;
+use App\Models\TaskCategoryGroup;
 use App\Models\ZoneBlock;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -35,12 +37,14 @@ new class extends Component
     public $viewActivitiesPlan = null;
 
     public $editRow = [
+        'task_category_group_id' => '',
         'title' => '',
         'plan_date' => '',
         'plan_start' => '',
         'plan_end' => '',
         'zone_block_ids' => [],
         'plan_area' => '',
+        'request_l_per_hectare' => '',
         'activities' => [],
         'status' => 'in_progress',
         'note' => '',
@@ -62,12 +66,14 @@ new class extends Component
     public function emptyRow()
     {
         return [
+            'task_category_group_id' => '',
             'title' => '',
             'plan_date' => now()->format('Y-m-d'),
             'plan_start' => '',
             'plan_end' => '',
             'zone_block_ids' => [],
             'plan_area' => '',
+            'request_l_per_hectare' => '',
             'activities' => [
                 [
                     'task_category_id' => '',
@@ -102,6 +108,127 @@ new class extends Component
     public function calculateRequestLiters($area, $literPerHa): float
     {
         return round((float) $area * (float) $literPerHa, 2);
+    }
+
+    public function calculateZoneBlockArea($ids): float
+    {
+        $ids = collect(is_array($ids) ? $ids : [])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        return $ids->isEmpty()
+            ? 0
+            : round((float) ZoneBlock::whereIn('id', $ids)->sum('area'), 2);
+    }
+
+    public function calculateActivityTotalFuel($area, $fuelPerHectare): float
+    {
+        return round((float) $area * (float) $fuelPerHectare, 2);
+    }
+
+    public function updatedRows($value, $key)
+    {
+        $parts = explode('.', $key);
+        $rowIndex = isset($parts[0]) ? (int) $parts[0] : null;
+
+        if (
+            $rowIndex === null ||
+            !isset($this->rows[$rowIndex])
+        ) {
+            return;
+        }
+
+        $field = $parts[1] ?? null;
+
+        if ($field === 'zone_block_ids') {
+            $this->rows[$rowIndex]['plan_area'] =
+                $this->calculateZoneBlockArea(
+                    $this->rows[$rowIndex]['zone_block_ids'] ?? []
+                );
+
+            return;
+        }
+
+        if ($field === 'task_category_group_id') {
+            $this->rows[$rowIndex]['activities'] = [
+                [
+                    'task_category_id' => '',
+                    'fuel_per_hectare' => '',
+                ],
+            ];
+
+            return;
+        }
+
+        if (
+            $field === 'activities' &&
+            ($parts[3] ?? null) === 'task_category_id'
+        ) {
+            $activityIndex = isset($parts[2])
+                ? (int) $parts[2]
+                : 0;
+
+            $taskCategory = TaskCategory::query()
+                ->whereKey($value)
+                ->where(
+                    'task_category_group_id',
+                    $this->rows[$rowIndex]['task_category_group_id'] ?? null
+                )
+                ->first();
+
+            $this->rows[$rowIndex]['activities'][$activityIndex]['fuel_per_hectare'] =
+                $taskCategory
+                    ? (float) $taskCategory->standard_fuel_per_hectare
+                    : '';
+        }
+    }
+
+    public function updatedEditRowZoneBlockIds()
+    {
+        $this->editRow['plan_area'] = $this->calculateZoneBlockArea(
+            $this->editRow['zone_block_ids'] ?? []
+        );
+    }
+
+    public function updatedEditRow($value, $key)
+    {
+        $parts = explode('.', $key);
+        $field = $parts[0] ?? null;
+
+        if ($field === 'task_category_group_id') {
+            $this->editRow['activities'] = [
+                [
+                    'task_category_id' => '',
+                    'fuel_per_hectare' => '',
+                ],
+            ];
+
+            return;
+        }
+
+        if (
+            $field === 'activities' &&
+            ($parts[2] ?? null) === 'task_category_id'
+        ) {
+            $activityIndex = isset($parts[1])
+                ? (int) $parts[1]
+                : 0;
+
+            $taskCategory = TaskCategory::query()
+                ->whereKey($value)
+                ->where(
+                    'task_category_group_id',
+                    $this->editRow['task_category_group_id'] ?? null
+                )
+                ->first();
+
+            $this->editRow['activities'][$activityIndex]['fuel_per_hectare'] =
+                $taskCategory
+                    ? (float) $taskCategory->standard_fuel_per_hectare
+                    : '';
+        }
     }
 
     public function addRowActivity($rowIndex)
@@ -152,10 +279,49 @@ new class extends Component
 
     public function viewActivities($planId)
     {
-        $this->viewActivitiesPlan = FarmWorkPlan::with([
-            'taskCategory',
-            'activities.taskCategory',
+        $plan = FarmWorkPlan::with([
+            'taskCategory.group',
+            'activities.taskCategory.group',
         ])->findOrFail($planId);
+
+        $activities = $plan->activities
+            ->map(function ($activity) use ($plan) {
+                return [
+                    'id' => $activity->id,
+                    'name' => optional($activity->taskCategory)->name ?? '-',
+                    'fuel_per_hectare' => (float) $activity->fuel_per_hectare,
+                    'total_fuel' => $this->calculateActivityTotalFuel(
+                        $plan->plan_area,
+                        $activity->fuel_per_hectare
+                    ),
+                ];
+            })
+            ->values()
+            ->toArray();
+
+        // Compatibility for older Work Plans.
+        if (empty($activities) && $plan->task_category_id) {
+            $activities[] = [
+                'id' => 'old-' . $plan->id,
+                'name' => optional($plan->taskCategory)->name ?? '-',
+                'fuel_per_hectare' => (float) $plan->request_l_per_hectare,
+                'total_fuel' => (float) $plan->request_liters,
+            ];
+        }
+
+        $firstTaskCategory = $plan->activities->first()?->taskCategory
+            ?? $plan->taskCategory;
+
+        $this->viewActivitiesPlan = [
+            'id' => $plan->id,
+            'title' => $firstTaskCategory?->group?->name
+                ?? $plan->title
+                ?? 'Work Plan',
+            'plan_area' => (float) $plan->plan_area,
+            'request_l_per_hectare' => (float) $plan->request_l_per_hectare,
+            'request_liters' => (float) $plan->request_liters,
+            'activities' => $activities,
+        ];
 
         $this->viewActivitiesOpen = true;
     }
@@ -195,6 +361,7 @@ new class extends Component
     {
         if ($this->zonePickerMode === 'edit') {
             $this->editRow['zone_block_ids'] = [];
+            $this->editRow['plan_area'] = 0;
             return;
         }
 
@@ -204,6 +371,7 @@ new class extends Component
             isset($this->rows[$this->zonePickerIndex])
         ) {
             $this->rows[$this->zonePickerIndex]['zone_block_ids'] = [];
+            $this->rows[$this->zonePickerIndex]['plan_area'] = 0;
         }
     }
 
@@ -216,6 +384,7 @@ new class extends Component
 
         if ($this->zonePickerMode === 'edit') {
             $this->editRow['zone_block_ids'] = $ids;
+            $this->editRow['plan_area'] = $this->calculateZoneBlockArea($ids);
             return;
         }
 
@@ -225,6 +394,7 @@ new class extends Component
             isset($this->rows[$this->zonePickerIndex])
         ) {
             $this->rows[$this->zonePickerIndex]['zone_block_ids'] = $ids;
+            $this->rows[$this->zonePickerIndex]['plan_area'] = $this->calculateZoneBlockArea($ids);
         }
     }
 
@@ -244,15 +414,28 @@ new class extends Component
         }
 
         $this->validate([
+            "rows.$index.task_category_group_id" => [
+                'required',
+                'exists:task_category_groups,id',
+            ],
             "rows.$index.title" => 'nullable|string|max:255',
             "rows.$index.plan_date" => 'required|date',
             "rows.$index.plan_start" => 'nullable|date',
             "rows.$index.plan_end" => 'nullable|date|after_or_equal:rows.' . $index . '.plan_start',
-            "rows.$index.zone_block_ids" => 'nullable|array',
+            "rows.$index.zone_block_ids" => 'required|array|min:1',
             "rows.$index.zone_block_ids.*" => 'exists:zone_blocks,id',
-            "rows.$index.plan_area" => 'required|numeric|min:0.01',
+            "rows.$index.request_l_per_hectare" => 'required|numeric|min:0',
             "rows.$index.activities" => 'required|array|min:1',
-            "rows.$index.activities.*.task_category_id" => 'required|exists:task_categories,id|distinct',
+            "rows.$index.activities.*.task_category_id" => [
+                'required',
+                'distinct',
+                Rule::exists('task_categories', 'id')->where(
+                    fn ($query) => $query->where(
+                        'task_category_group_id',
+                        $this->rows[$index]['task_category_group_id'] ?? null
+                    )
+                ),
+            ],
             "rows.$index.activities.*.fuel_per_hectare" => 'required|numeric|min:0',
             "rows.$index.status" => 'required|in:in_progress,complete,cancelled',
             "rows.$index.note" => 'nullable|string|max:2000',
@@ -266,29 +449,38 @@ new class extends Component
             ->values()
             ->toArray();
 
-        $totalFuelPerHectare = $this->calculateActivityFuelPerHectare(
-            $row['activities'] ?? []
+        $planArea = $this->calculateZoneBlockArea($zoneBlockIds);
+
+        $totalFuelPerHectare = round(
+            (float) ($row['request_l_per_hectare'] ?? 0),
+            2
         );
 
         $requestLiters = $this->calculateRequestLiters(
-            $row['plan_area'] ?? 0,
+            $planArea,
             $totalFuelPerHectare
         );
+
+        $taskGroupName = TaskCategoryGroup::whereKey(
+            $row['task_category_group_id']
+        )->value('name');
 
         DB::transaction(function () use (
             $row,
             $zoneBlockIds,
+            $planArea,
             $totalFuelPerHectare,
-            $requestLiters
+            $requestLiters,
+            $taskGroupName
         ) {
             $plan = FarmWorkPlan::create([
-                'title' => filled($row['title'] ?? null) ? $row['title'] : null,
+                'title' => $taskGroupName,
                 'plan_date' => $row['plan_date'],
                 'task_category_id' => null,
                 'plan_start' => filled($row['plan_start'] ?? null) ? $row['plan_start'] : null,
                 'plan_end' => filled($row['plan_end'] ?? null) ? $row['plan_end'] : null,
                 'zone_block_ids' => $zoneBlockIds,
-                'plan_area' => (float) $row['plan_area'],
+                'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
                 'status' => $row['status'],
@@ -297,7 +489,7 @@ new class extends Component
                 'updated_by' => Auth::id(),
             ]);
 
-            foreach ($row['activities'] as $activity) {
+            foreach (($row['activities'] ?? []) as $activity) {
                 $plan->activities()->create([
                     'task_category_id' => (int) $activity['task_category_id'],
                     'fuel_per_hectare' => (float) $activity['fuel_per_hectare'],
@@ -328,8 +520,8 @@ new class extends Component
         }
 
         $plan = FarmWorkPlan::with([
-            'taskCategory',
-            'activities.taskCategory',
+            'taskCategory.group',
+            'activities.taskCategory.group',
         ])->findOrFail($id);
 
         $activities = $plan->activities
@@ -355,15 +547,23 @@ new class extends Component
             ];
         }
 
+        $firstTaskCategory = $plan->activities->first()?->taskCategory
+            ?? $plan->taskCategory;
+
+        $taskCategoryGroupId =
+            $firstTaskCategory?->task_category_group_id ?? '';
+
         $this->editingId = $plan->id;
 
         $this->editRow = [
+            'task_category_group_id' => $taskCategoryGroupId,
             'title' => $plan->title,
             'plan_date' => optional($plan->plan_date)->format('Y-m-d') ?: $plan->plan_date,
             'plan_start' => optional($plan->plan_start)->format('Y-m-d') ?: $plan->plan_start,
             'plan_end' => optional($plan->plan_end)->format('Y-m-d') ?: $plan->plan_end,
             'zone_block_ids' => $plan->zone_block_ids ?: [],
             'plan_area' => $plan->plan_area,
+            'request_l_per_hectare' => $plan->request_l_per_hectare,
             'activities' => $activities,
             'status' => $plan->status,
             'note' => $plan->note,
@@ -375,12 +575,14 @@ new class extends Component
         $this->editingId = null;
 
         $this->editRow = [
+            'task_category_group_id' => '',
             'title' => '',
             'plan_date' => '',
             'plan_start' => '',
             'plan_end' => '',
             'zone_block_ids' => [],
             'plan_area' => '',
+            'request_l_per_hectare' => '',
             'activities' => [],
             'status' => 'in_progress',
             'note' => '',
@@ -401,15 +603,28 @@ new class extends Component
         $plan = FarmWorkPlan::findOrFail($this->editingId);
 
         $this->validate([
+            'editRow.task_category_group_id' => [
+                'required',
+                'exists:task_category_groups,id',
+            ],
             'editRow.title' => 'nullable|string|max:255',
             'editRow.plan_date' => 'required|date',
             'editRow.plan_start' => 'nullable|date',
             'editRow.plan_end' => 'nullable|date|after_or_equal:editRow.plan_start',
-            'editRow.zone_block_ids' => 'nullable|array',
+            'editRow.zone_block_ids' => 'required|array|min:1',
             'editRow.zone_block_ids.*' => 'exists:zone_blocks,id',
-            'editRow.plan_area' => 'required|numeric|min:0.01',
+            'editRow.request_l_per_hectare' => 'required|numeric|min:0',
             'editRow.activities' => 'required|array|min:1',
-            'editRow.activities.*.task_category_id' => 'required|exists:task_categories,id|distinct',
+            'editRow.activities.*.task_category_id' => [
+                'required',
+                'distinct',
+                Rule::exists('task_categories', 'id')->where(
+                    fn ($query) => $query->where(
+                        'task_category_group_id',
+                        $this->editRow['task_category_group_id'] ?? null
+                    )
+                ),
+            ],
             'editRow.activities.*.fuel_per_hectare' => 'required|numeric|min:0',
             'editRow.status' => 'required|in:in_progress,complete,cancelled',
             'editRow.note' => 'nullable|string|max:2000',
@@ -421,25 +636,32 @@ new class extends Component
             ->values()
             ->toArray();
 
-        $totalFuelPerHectare = $this->calculateActivityFuelPerHectare(
-            $this->editRow['activities'] ?? []
+        $planArea = $this->calculateZoneBlockArea($zoneBlockIds);
+
+        $totalFuelPerHectare = round(
+            (float) ($this->editRow['request_l_per_hectare'] ?? 0),
+            2
         );
 
         $requestLiters = $this->calculateRequestLiters(
-            $this->editRow['plan_area'] ?? 0,
+            $planArea,
             $totalFuelPerHectare
         );
+
+        $taskGroupName = TaskCategoryGroup::whereKey(
+            $this->editRow['task_category_group_id']
+        )->value('name');
 
         DB::transaction(function () use (
             $plan,
             $zoneBlockIds,
+            $planArea,
             $totalFuelPerHectare,
-            $requestLiters
+            $requestLiters,
+            $taskGroupName
         ) {
             $plan->update([
-                'title' => filled($this->editRow['title'] ?? null)
-                    ? $this->editRow['title']
-                    : null,
+                'title' => $taskGroupName,
                 'plan_date' => $this->editRow['plan_date'],
                 'task_category_id' => null,
                 'plan_start' => filled($this->editRow['plan_start'] ?? null)
@@ -449,7 +671,7 @@ new class extends Component
                     ? $this->editRow['plan_end']
                     : null,
                 'zone_block_ids' => $zoneBlockIds,
-                'plan_area' => (float) $this->editRow['plan_area'],
+                'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
                 'status' => $this->editRow['status'],
@@ -516,8 +738,8 @@ new class extends Component
     private function plansQuery()
     {
         return FarmWorkPlan::with([
-            'taskCategory',
-            'activities.taskCategory',
+            'taskCategory.group',
+            'activities.taskCategory.group',
         ])
             ->withCount('workLogs')
             ->when($this->search, function ($q) {
@@ -550,7 +772,11 @@ new class extends Component
                             $taskQuery->where('name', 'like', '%' . $search . '%');
                         })
                         ->orWhereHas('activities.taskCategory', function ($taskQuery) use ($search) {
-                            $taskQuery->where('name', 'like', '%' . $search . '%');
+                            $taskQuery
+                                ->where('name', 'like', '%' . $search . '%')
+                                ->orWhereHas('group', function ($groupQuery) use ($search) {
+                                    $groupQuery->where('name', 'like', '%' . $search . '%');
+                                });
                         });
 
                     foreach ($matchingBlockIds as $blockId) {
@@ -628,8 +854,10 @@ new class extends Component
         $sheet->setTitle(__('pages.farm_work_plans'));
 
         $headers = [
-            'A1' => trans()->has('pages.title') ? __('pages.title') : 'Title',
-            'B1' => __('pages.plan_date'),
+            'A1' => __('pages.plan_date'),
+            'B1' => trans()->has('pages.task_group')
+                ? __('pages.task_group')
+                : 'Task Group',
             'C1' => __('pages.activity'),
             'D1' => __('pages.plan_start'),
             'E1' => __('pages.plan_end'),
@@ -657,8 +885,19 @@ new class extends Component
                 $activityNames = $plan->taskCategory->name;
             }
 
-            $sheet->setCellValue('A' . $rowNumber, $plan->title ?? '-');
-            $sheet->setCellValue('B' . $rowNumber, optional($plan->plan_date)->format('Y-m-d'));
+            $firstTaskCategory = $plan->activities->first()?->taskCategory
+                ?? $plan->taskCategory;
+
+            $sheet->setCellValue(
+                'A' . $rowNumber,
+                optional($plan->plan_date)->format('Y-m-d')
+            );
+            $sheet->setCellValue(
+                'B' . $rowNumber,
+                $firstTaskCategory?->group?->name
+                    ?? $plan->title
+                    ?? '-'
+            );
             $sheet->setCellValue('C' . $rowNumber, $activityNames ?: '-');
             $sheet->setCellValue('D' . $rowNumber, optional($plan->plan_start)->format('Y-m-d'));
             $sheet->setCellValue('E' . $rowNumber, optional($plan->plan_end)->format('Y-m-d'));
@@ -798,7 +1037,12 @@ new class extends Component
             ->get();
 
         return [
-            'taskCategories' => TaskCategory::where('status', 'active')
+            'taskCategoryGroups' => TaskCategoryGroup::query()
+                ->where('status', true)
+                ->orderBy('name')
+                ->get(),
+            'taskCategories' => TaskCategory::with('group')
+                ->where('status', 'active')
                 ->orderBy('name')
                 ->get(),
             'zoneBlocks' => $zoneBlocks,
@@ -905,6 +1149,72 @@ new class extends Component
             font-size: 14px;
             font-weight: 900;
         }
+        /* Keep Work Plan table compact before and after clicking Add New */
+.plan-table {
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+.plan-table thead,
+.plan-table tbody,
+.plan-table tfoot {
+    height: auto !important;
+}
+
+.plan-table tbody > tr {
+    height: 52px !important;
+    min-height: 52px !important;
+}
+
+.plan-table tbody > tr > td {
+    height: 52px !important;
+    min-height: 52px !important;
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+    vertical-align: middle !important;
+    line-height: 1.2 !important;
+}
+
+/* Keep the Add New row compact */
+.plan-table tbody > tr.new-row {
+    height: 58px !important;
+    min-height: 58px !important;
+}
+
+.plan-table tbody > tr.new-row > td {
+    height: 58px !important;
+    min-height: 58px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+}
+
+/* Keep all form controls inside the same row height */
+.plan-table .new-row input,
+.plan-table .new-row select,
+.plan-table .new-row .activity-select-btn,
+.plan-table .new-row .zone-select-btn {
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    margin: 0 !important;
+}
+
+/* Do not allow saved rows to stretch */
+.plan-table tbody > tr:not(.new-row) input,
+.plan-table tbody > tr:not(.new-row) select,
+.plan-table tbody > tr:not(.new-row) button {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Keep footer compact */
+.plan-table tfoot tr,
+.plan-table tfoot td {
+    height: 58px !important;
+    min-height: 58px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+}
 
         /*
          * Keep the complete Work Plan on one compact table.
@@ -935,6 +1245,20 @@ new class extends Component
             text-transform: uppercase;
             white-space: nowrap;
         }
+        .saved-activity-cell {
+    min-width: 145px;
+    max-width: 230px;
+}
+
+.saved-activity-name {
+    display: block;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
         .plan-table td {
             padding: 9px 8px;
@@ -1308,7 +1632,7 @@ new class extends Component
 
         .activity-editor-item {
             display: grid;
-            grid-template-columns: 44px minmax(240px, 1fr) 170px 44px;
+            grid-template-columns: 44px minmax(220px, 1fr) 125px 125px 145px 44px;
             gap: 10px;
             align-items: end;
             padding: 10px;
@@ -1391,7 +1715,8 @@ new class extends Component
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            gap: 9px;
+            gap: 18px;
+            flex-wrap: wrap;
             color: #166534;
             font-size: 13px;
             font-weight: 900;
@@ -1501,6 +1826,14 @@ new class extends Component
             font-weight: 800;
         }
 
+        .zone-top-summary {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         .zone-top-count {
             padding: 5px 10px;
             border: 1px solid #bbf7d0;
@@ -1584,6 +1917,13 @@ new class extends Component
             font-weight: 700;
         }
 
+
+        .zone-select-btn > span:first-child { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
+        .zone-select-btn small { color:#15803d; font-size:10px; font-weight:900; }
+        .subzone-area { margin-top:5px; color:#15803d; font-size:12px; font-weight:950; }
+        .zone-footer-summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+        .activity-editor-item input[readonly] { background:#f1f5f9; color:#0f172a; font-weight:900; }
+
         @media (max-width: 1200px) {
             .filter-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1641,6 +1981,160 @@ new class extends Component
                 justify-content: flex-start;
             }
         }
+
+        /* FIX ONLY: prevent saved rows from stretching after Add New */
+        .table-wrap {
+            height: auto !important;
+            min-height: 0 !important;
+            align-items: flex-start !important;
+        }
+
+        .table-wrap > table.plan-table {
+            display: table !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+        .plan-table thead {
+            display: table-header-group !important;
+            height: auto !important;
+        }
+
+        .plan-table tbody {
+            display: table-row-group !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }
+
+        .plan-table tfoot {
+            display: table-footer-group !important;
+            height: auto !important;
+        }
+
+        .plan-table tbody > tr:not(.activity-detail-row) {
+            display: table-row !important;
+            height: 52px !important;
+            min-height: 52px !important;
+            max-height: 52px !important;
+        }
+
+        .plan-table tbody > tr.new-row {
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+        }
+
+        .plan-table tbody > tr:not(.activity-detail-row) > td {
+            height: 52px !important;
+            min-height: 52px !important;
+            max-height: 52px !important;
+            padding-top: 7px !important;
+            padding-bottom: 7px !important;
+            vertical-align: middle !important;
+        }
+
+        .plan-table tbody > tr.new-row > td {
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            padding-top: 8px !important;
+            padding-bottom: 8px !important;
+        }
+
+        .plan-table tbody > tr.activity-detail-row {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+        .plan-table tbody > tr.activity-detail-row > td {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+
+        /*
+         * FINAL ROW-SIZE FIX ONLY:
+         * Keep saved Work Plan rows compact after Add New is clicked.
+         */
+        .table-wrap {
+            height: auto !important;
+            min-height: 0 !important;
+        }
+
+        table.plan-table {
+            height: 1px !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+        table.plan-table > thead,
+        table.plan-table > tbody,
+        table.plan-table > tfoot {
+            height: auto !important;
+            min-height: 0 !important;
+        }
+
+        table.plan-table > tbody > tr:not(.activity-detail-row) {
+            height: 1px !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+        table.plan-table > tbody > tr:not(.activity-detail-row) > td {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            padding-top: 7px !important;
+            padding-bottom: 7px !important;
+            vertical-align: middle !important;
+        }
+
+        table.plan-table > tbody > tr.new-row > td {
+            padding-top: 8px !important;
+            padding-bottom: 8px !important;
+        }
+
+        table.plan-table > tbody > tr.activity-detail-row,
+        table.plan-table > tbody > tr.activity-detail-row > td {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+        table.plan-table > tfoot > tr,
+        table.plan-table > tfoot > tr > td {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+
+
+        /* View Activities modal stability and layout fix only */
+        .view-activities-body {
+            overflow-x: hidden;
+        }
+
+        .activity-view-scroll {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+        }
+
+        .activity-view-scroll .activity-view-table {
+            min-width: 720px;
+            border-radius: 0;
+        }
+
+        .activity-view-table th,
+        .activity-view-table td {
+            white-space: nowrap;
+        }
+
     </style>
 
     <div class="page-header">
@@ -1767,8 +2261,12 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>{{ trans()->has('pages.title') ? __('pages.title') : 'Title' }}</th>
                         <th>{{ __('pages.plan_date') }}</th>
+                        <th>
+                            {{ trans()->has('pages.task_group')
+                                ? __('pages.task_group')
+                                : 'Task Group' }}
+                        </th>
                         <th>{{ __('pages.activity') }}</th>
                         <th>{{ __('pages.plan_start') }}</th>
                         <th>{{ __('pages.plan_end') }}</th>
@@ -1786,31 +2284,45 @@ new class extends Component
                     @forelse($this->plans as $plan)
                         @if($editingId === $plan->id)
                             @php
-                                $editFuelPerHa = $this->calculateActivityFuelPerHectare(
-                                    $editRow['activities'] ?? []
+                                $editZoneArea = $this->calculateZoneBlockArea(
+                                    $editRow['zone_block_ids'] ?? []
                                 );
 
-                                $editRequestLiters = round(
-                                    (float) ($editRow['plan_area'] ?? 0) * $editFuelPerHa,
-                                    2
+                                $editFuelPerHa = (float) (
+                                    $editRow['request_l_per_hectare'] ?? 0
+                                );
+
+                                $editRequestLiters = $this->calculateRequestLiters(
+                                    $editZoneArea,
+                                    $editFuelPerHa
+                                );
+
+                                $editTaskCategories = $taskCategories->filter(
+                                    fn ($task) =>
+                                        (string) $task->task_category_group_id ===
+                                        (string) ($editRow['task_category_group_id'] ?? '')
                                 );
                             @endphp
 
-                            <tr class="new-row">
+                            <tr class="new-row" wire:key="edit-work-plan-{{ $plan->id }}">
                                 <td class="row-no">
                                     {{ ($this->plans->firstItem() ?? 1) + $loop->index }}
                                 </td>
 
-                                <td class="col-title">
-                                    <input
-                                        type="text"
-                                        wire:model.live="editRow.title"
-                                        placeholder="{{ trans()->has('pages.title') ? __('pages.title') : 'Title' }}"
-                                    >
-                                </td>
-
                                 <td class="col-date">
                                     <input type="date" wire:model.live="editRow.plan_date">
+                                </td>
+
+                                <td class="col-title">
+                                    <select wire:model.live="editRow.task_category_group_id">
+                                        <option value="">Select Task Group</option>
+
+                                        @foreach($taskCategoryGroups as $group)
+                                            <option value="{{ $group->id }}">
+                                                {{ $group->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
                                 </td>
 
                                 <td class="col-activity">
@@ -1845,6 +2357,7 @@ new class extends Component
                                     >
                                         <span>
                                             {{ $this->getZoneBlockSummary($editRow['zone_block_ids'] ?? []) }}
+                                            <small>{{ number_format($editZoneArea, 2) }} Ha</small>
                                         </span>
 
                                         <span class="zone-select-count">
@@ -1855,19 +2368,20 @@ new class extends Component
 
                                 <td class="col-number">
                                     <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        wire:model.live="editRow.plan_area"
+                                        type="text"
+                                        class="readonly-calc"
+                                        value="{{ number_format($editZoneArea, 2) }}"
+                                        readonly
                                     >
                                 </td>
 
                                 <td class="col-number">
                                     <input
-                                        type="text"
-                                        class="readonly-calc"
-                                        value="{{ number_format($editFuelPerHa, 2) }}"
-                                        readonly
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:model.live="editRow.request_l_per_hectare"
+                                        placeholder="0.00"
                                     >
                                 </td>
 
@@ -1915,14 +2429,14 @@ new class extends Component
     <td colspan="13">
         <div class="activity-editor-card">
             <div class="activity-editor-header">
-                {{-- <div>
+                <div>
                     <div class="activity-editor-title">
                         Activities for this Work Plan
                     </div>
                     <div class="activity-editor-subtitle">
                         Update activities and fuel per hectare.
                     </div>
-                </div> --}}
+                </div>
 
                 <button
                     type="button"
@@ -1950,12 +2464,21 @@ new class extends Component
                             >
                                 <option value="">Select Activity</option>
 
-                                @foreach($taskCategories as $task)
+                                @foreach($editTaskCategories as $task)
                                     <option value="{{ $task->id }}">
                                         {{ $task->name }}
                                     </option>
                                 @endforeach
                             </select>
+                        </div>
+
+                        <div>
+                            <label class="activity-editor-label">Zone Area (Ha)</label>
+                            <input
+                                type="text"
+                                value="{{ number_format($editZoneArea, 2) }}"
+                                readonly
+                            >
                         </div>
 
                         <div>
@@ -1966,6 +2489,15 @@ new class extends Component
                                 step="0.01"
                                 placeholder="0.00"
                                 wire:model.live="editRow.activities.{{ $activityIndex }}.fuel_per_hectare"
+                            >
+                        </div>
+
+                        <div>
+                            <label class="activity-editor-label">Total Fuel (L)</label>
+                            <input
+                                type="text"
+                                value="{{ number_format($this->calculateActivityTotalFuel($editZoneArea, $activity['fuel_per_hectare'] ?? 0), 2) }}"
+                                readonly
                             >
                         </div>
 
@@ -1988,37 +2520,69 @@ new class extends Component
             </div>
 
             <div class="activity-editor-footer">
-                <span>Total Fuel/Ha</span>
-                <strong>{{ number_format($editFuelPerHa, 2) }} L/Ha</strong>
+                <span>Zone Area: <strong>{{ number_format($editZoneArea, 2) }} Ha</strong></span>
+                <span>Total Fuel/Ha: <strong>{{ number_format($editFuelPerHa, 2) }} L/Ha</strong></span>
+                <span>Total Fuel: <strong>{{ number_format($editRequestLiters, 2) }} L</strong></span>
             </div>
         </div>
     </td>
 </tr>
                         @else
-                            <tr>
+                            <tr wire:key="work-plan-{{ $plan->id }}">
                                 <td class="row-no">
                                     {{ ($this->plans->firstItem() ?? 1) + $loop->index }}
                                 </td>
-
-                                <td>{{ $plan->title ?: '-' }}</td>
 
                                 <td>
                                     {{ optional($plan->plan_date)->format('d M Y') ?: '-' }}
                                 </td>
 
                                 <td>
-                                    <button
-                                        type="button"
-                                        wire:click="viewActivities({{ $plan->id }})"
-                                        class="view-activity-btn"
-                                    >
-                                        View Activities
-
-                                        <span>
-                                            {{ $plan->activities->count() ?: ($plan->task_category_id ? 1 : 0) }}
-                                        </span>
-                                    </button>
+                                    {{
+                                        $plan->activities
+                                            ->first()
+                                            ?->taskCategory
+                                            ?->group
+                                            ?->name
+                                        ?? $plan->taskCategory
+                                            ?->group
+                                            ?->name
+                                        ?? $plan->title
+                                        ?? '-'
+                                    }}
                                 </td>
+
+                                <td class="saved-activity-cell">
+    @php
+        $savedActivityNames = $plan->activities
+            ->map(
+                fn ($activity) =>
+                    optional($activity->taskCategory)->name
+            )
+            ->filter()
+            ->values();
+
+        if (
+            $savedActivityNames->isEmpty() &&
+            $plan->taskCategory
+        ) {
+            $savedActivityNames = collect([
+                $plan->taskCategory->name,
+            ]);
+        }
+    @endphp
+
+    @if($savedActivityNames->isNotEmpty())
+        <span
+            class="saved-activity-name"
+            title="{{ $savedActivityNames->implode(', ') }}"
+        >
+            {{ $savedActivityNames->implode(', ') }}
+        </span>
+    @else
+        -
+    @endif
+</td>
 
                                 <td>
                                     {{ optional($plan->plan_start)->format('d M Y') ?: '-' }}
@@ -2096,17 +2660,30 @@ new class extends Component
 
                     @foreach($rows as $index => $row)
                         @php
-                            $rowFuelPerHa = $this->calculateActivityFuelPerHectare(
-                                $row['activities'] ?? []
+                            $rowZoneArea = $this->calculateZoneBlockArea(
+                                $row['zone_block_ids'] ?? []
                             );
 
-                            $rowRequestLiters = round(
-                                (float) ($row['plan_area'] ?? 0) * $rowFuelPerHa,
-                                2
+                            $rowFuelPerHa = (float) (
+                                $row['request_l_per_hectare'] ?? 0
+                            );
+
+                            $rowRequestLiters = $this->calculateRequestLiters(
+                                $rowZoneArea,
+                                $rowFuelPerHa
+                            );
+
+                            $rowTaskCategories = $taskCategories->filter(
+                                fn ($task) =>
+                                    (string) $task->task_category_group_id ===
+                                    (string) ($row['task_category_group_id'] ?? '')
                             );
                         @endphp
 
-                        <tr class="new-row" wire:key="new-work-plan-{{ $index }}">
+                        <tr
+                            class="new-row"
+                            wire:key="new-work-plan-{{ $index }}"
+                        >
                             <td class="row-no">
                                 <button
                                     type="button"
@@ -2117,14 +2694,6 @@ new class extends Component
                                 </button>
                             </td>
 
-                            <td class="col-title">
-                                <input
-                                    type="text"
-                                    wire:model.live="rows.{{ $index }}.title"
-                                    placeholder="{{ trans()->has('pages.title') ? __('pages.title') : 'Title' }}"
-                                >
-                            </td>
-
                             <td class="col-date">
                                 <input
                                     type="date"
@@ -2132,20 +2701,35 @@ new class extends Component
                                 >
                             </td>
 
-                            <td class="col-activity">
-                                <button
-                                    type="button"
-                                    class="activity-select-btn"
-                                    wire:click="addRowActivity({{ $index }})"
-                                >
-                                    <span>
-                                        {{ count($row['activities'] ?? []) > 0
-                                            ? count($row['activities']) . ' Activities'
-                                            : 'Choose Activities' }}
-                                    </span>
+                            <td class="col-title">
+                                <select wire:model.live="rows.{{ $index }}.task_category_group_id">
+                                    <option value="">Select Task Group</option>
 
-                                    <span class="activity-add-icon">+</span>
-                                </button>
+                                    @foreach($taskCategoryGroups as $group)
+                                        <option value="{{ $group->id }}">
+                                            {{ $group->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </td>
+
+                            <td class="col-activity">
+                                <select
+                                    wire:model.live="rows.{{ $index }}.activities.0.task_category_id"
+                                    @disabled(empty($row['task_category_group_id']))
+                                >
+                                    <option value="">
+                                        {{ empty($row['task_category_group_id'])
+                                            ? 'Select Task Group First'
+                                            : 'Select Activity' }}
+                                    </option>
+
+                                    @foreach($rowTaskCategories as $task)
+                                        <option value="{{ $task->id }}">
+                                            {{ $task->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
                             </td>
 
                             <td class="col-date">
@@ -2169,7 +2753,13 @@ new class extends Component
                                     wire:click="openRowZonePicker({{ $index }})"
                                 >
                                     <span>
-                                        {{ $this->getZoneBlockSummary($row['zone_block_ids'] ?? []) }}
+                                        {{ $this->getZoneBlockSummary(
+                                            $row['zone_block_ids'] ?? []
+                                        ) }}
+
+                                        <small>
+                                            {{ number_format($rowZoneArea, 2) }} Ha
+                                        </small>
                                     </span>
 
                                     <span class="zone-select-count">
@@ -2180,19 +2770,20 @@ new class extends Component
 
                             <td class="col-number">
                                 <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.plan_area"
+                                    type="text"
+                                    class="readonly-calc"
+                                    value="{{ number_format($rowZoneArea, 2) }}"
+                                    readonly
                                 >
                             </td>
 
                             <td class="col-number">
                                 <input
-                                    type="text"
-                                    class="readonly-calc"
-                                    value="{{ number_format($rowFuelPerHa, 2) }}"
-                                    readonly
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    wire:model.live="rows.{{ $index }}.request_l_per_hectare"
+                                    placeholder="0.00"
                                 >
                             </td>
 
@@ -2207,9 +2798,17 @@ new class extends Component
 
                             <td class="col-status">
                                 <select wire:model.live="rows.{{ $index }}.status">
-                                    <option value="in_progress">{{ __('pages.in_progress') }}</option>
-                                    <option value="complete">{{ __('pages.complete') }}</option>
-                                    <option value="cancelled">{{ __('pages.cancelled') }}</option>
+                                    <option value="in_progress">
+                                        {{ __('pages.in_progress') }}
+                                    </option>
+
+                                    <option value="complete">
+                                        {{ __('pages.complete') }}
+                                    </option>
+
+                                    <option value="cancelled">
+                                        {{ __('pages.cancelled') }}
+                                    </option>
                                 </select>
                             </td>
 
@@ -2232,103 +2831,6 @@ new class extends Component
                                     >
                                         {{ __('pages.remove') }}
                                     </button>
-                                </div>
-                            </td>
-                        </tr>
-
-                        <tr
-                            class="activity-detail-row"
-                            wire:key="new-work-plan-activities-{{ $index }}"
-                        >
-                            <td colspan="13">
-                                <div class="activity-editor-card">
-                                    <div class="activity-editor-header">
-                                        {{-- <div>
-                                            <div class="activity-editor-title">
-                                                Activities for this Work Plan
-                                            </div>
-
-                                            <div class="activity-editor-subtitle">
-                                                Add activities and input fuel per hectare.
-                                            </div>
-                                        </div> --}}
-
-                                        <button
-                                            type="button"
-                                            class="activity-editor-add-btn"
-                                            wire:click="addRowActivity({{ $index }})"
-                                        >
-                                            + Add Activity
-                                        </button>
-                                    </div>
-
-                                    <div class="activity-editor-body">
-                                        @forelse($row['activities'] ?? [] as $activityIndex => $activity)
-                                            <div
-                                                class="activity-editor-item"
-                                                wire:key="create-inline-activity-{{ $index }}-{{ $activityIndex }}"
-                                            >
-                                                <div class="activity-editor-no">
-                                                    {{ $activityIndex + 1 }}
-                                                </div>
-
-                                                <div>
-                                                    <label class="activity-editor-label">
-                                                        Activity
-                                                    </label>
-
-                                                    <select
-                                                        wire:model.live="rows.{{ $index }}.activities.{{ $activityIndex }}.task_category_id"
-                                                    >
-                                                        <option value="">Select Activity</option>
-
-                                                        @foreach($taskCategories as $task)
-                                                            <option value="{{ $task->id }}">
-                                                                {{ $task->name }}
-                                                            </option>
-                                                        @endforeach
-                                                    </select>
-                                                </div>
-
-                                                <div>
-                                                    <label class="activity-editor-label">
-                                                        Fuel L/Ha
-                                                    </label>
-
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        step="0.01"
-                                                        placeholder="0.00"
-                                                        wire:model.live="rows.{{ $index }}.activities.{{ $activityIndex }}.fuel_per_hectare"
-                                                    >
-                                                </div>
-
-                                                <div class="activity-editor-remove-wrap">
-                                                    <button
-                                                        type="button"
-                                                        class="activity-editor-remove-btn"
-                                                        wire:click="removeRowActivity({{ $index }}, {{ $activityIndex }})"
-                                                    >
-                                                        ×
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        @empty
-                                            <div class="activity-editor-empty">
-                                                No activity added yet. Click
-                                                <strong>+ Add Activity</strong>.
-                                            </div>
-                                        @endforelse
-                                    </div>
-
-                                    <div class="activity-editor-footer">
-                                        <span>Total Fuel/Ha</span>
-
-                                        <strong>
-                                            {{ number_format($rowFuelPerHa, 2) }} L/Ha
-                                        </strong>
-                                    </div>
                                 </div>
                             </td>
                         </tr>
@@ -2382,12 +2884,13 @@ new class extends Component
     </div>
 
     {{-- View Saved Activities Modal --}}
-    @if($viewActivitiesOpen && $viewActivitiesPlan)
+    @if($viewActivitiesOpen && is_array($viewActivitiesPlan))
         <div
             class="modal-backdrop"
+            wire:key="view-activities-modal-{{ $viewActivitiesPlan['id'] }}"
             wire:click.self="closeViewActivities"
         >
-            <div class="modal-card medium">
+            <div class="modal-card wide">
                 <div class="modal-header">
                     <div>
                         <div class="modal-title">
@@ -2395,7 +2898,7 @@ new class extends Component
                         </div>
 
                         <div class="modal-subtitle">
-                            {{ $viewActivitiesPlan->title ?: 'Work Plan' }}
+                            {{ $viewActivitiesPlan['title'] }}
                         </div>
                     </div>
 
@@ -2408,77 +2911,66 @@ new class extends Component
                     </button>
                 </div>
 
-                <div class="modal-body">
-                    <table class="activity-view-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Activity</th>
-                                <th>Fuel L/Ha</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            @forelse($viewActivitiesPlan->activities as $activity)
+                <div class="modal-body view-activities-body">
+                    <div class="activity-view-scroll">
+                        <table class="activity-view-table">
+                            <thead>
                                 <tr>
-                                    <td>{{ $loop->iteration }}</td>
-
-                                    <td>
-                                        {{ $activity->taskCategory->name ?? '-' }}
-                                    </td>
-
-                                    <td>
-                                        {{ number_format((float) $activity->fuel_per_hectare, 2) }}
-                                    </td>
+                                    <th>#</th>
+                                    <th>Activity</th>
+                                    <th>Zone Area (Ha)</th>
+                                    <th>Fuel L/Ha</th>
+                                    <th>Total Fuel (L)</th>
                                 </tr>
-                            @empty
-                                @if($viewActivitiesPlan->taskCategory)
-                                    <tr>
-                                        <td>1</td>
+                            </thead>
 
+                            <tbody>
+                                @forelse($viewActivitiesPlan['activities'] as $activity)
+                                    <tr wire:key="view-activity-{{ $activity['id'] }}">
+                                        <td>{{ $loop->iteration }}</td>
+                                        <td>{{ $activity['name'] }}</td>
                                         <td>
-                                            {{ $viewActivitiesPlan->taskCategory->name }}
+                                            {{ number_format($viewActivitiesPlan['plan_area'], 2) }}
                                         </td>
-
                                         <td>
-                                            {{ number_format((float) $viewActivitiesPlan->request_l_per_hectare, 2) }}
+                                            {{ number_format($activity['fuel_per_hectare'], 2) }}
+                                        </td>
+                                        <td>
+                                            {{ number_format($activity['total_fuel'], 2) }}
                                         </td>
                                     </tr>
-                                @else
+                                @empty
                                     <tr>
-                                        <td colspan="3" class="empty">
+                                        <td colspan="5" class="empty">
                                             No activities found.
                                         </td>
                                     </tr>
-                                @endif
-                            @endforelse
-                        </tbody>
-                    </table>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
 
                     <div class="activity-summary-grid">
                         <div class="activity-summary-card">
                             <span>Plan Area</span>
-
                             <strong>
-                                {{ number_format((float) $viewActivitiesPlan->plan_area, 2) }}
+                                {{ number_format($viewActivitiesPlan['plan_area'], 2) }}
                                 Ha
                             </strong>
                         </div>
 
                         <div class="activity-summary-card">
                             <span>Total Fuel/Ha</span>
-
                             <strong>
-                                {{ number_format((float) $viewActivitiesPlan->request_l_per_hectare, 2) }}
+                                {{ number_format($viewActivitiesPlan['request_l_per_hectare'], 2) }}
                                 L/Ha
                             </strong>
                         </div>
 
                         <div class="activity-summary-card">
                             <span>Requested Fuel</span>
-
                             <strong>
-                                {{ number_format((float) $viewActivitiesPlan->request_liters, 2) }}
+                                {{ number_format($viewActivitiesPlan['request_liters'], 2) }}
                                 L
                             </strong>
                         </div>
@@ -2517,6 +3009,7 @@ new class extends Component
                 $activeSelectedIds =
                     $rows[$zonePickerIndex]['zone_block_ids'] ?? [];
             }
+            $activeSelectedArea = $this->calculateZoneBlockArea($activeSelectedIds);
         @endphp
 
         <div
@@ -2570,6 +3063,7 @@ new class extends Component
                                 $zone = optional($firstBlock)->zone;
                                 $zoneTitle = optional($zone)->zone_code ?: 'No Zone';
                                 $zoneName = optional($zone)->name;
+                                $zoneTotalArea = (float) $blocks->sum('area');
                             @endphp
 
                             <div class="zone-row-group">
@@ -2584,9 +3078,15 @@ new class extends Component
                                         </div>
                                     </div>
 
-                                    <div class="zone-top-count">
-                                        {{ $blocks->count() }}
-                                        {{ trans()->has('pages.zone_blocks') ? __('pages.zone_blocks') : 'sub zones' }}
+                                    <div class="zone-top-summary">
+                                        <div class="zone-top-count">
+                                            {{ $blocks->count() }}
+                                            {{ trans()->has('pages.zone_blocks') ? __('pages.zone_blocks') : 'Zone Blocks' }}
+                                        </div>
+
+                                        <div class="zone-top-count">
+                                            Total Area: {{ number_format($zoneTotalArea, 2) }} Ha
+                                        </div>
                                     </div>
                                 </div>
 
@@ -2614,6 +3114,7 @@ new class extends Component
                                             <span class="subzone-name">
                                                 {{ $block->name ?: __('pages.zone_block') }}
                                             </span>
+                                            <span class="subzone-area">{{ number_format((float) $block->area, 2) }} Ha</span>
                                         </label>
                                     @endforeach
                                 </div>
@@ -2627,9 +3128,9 @@ new class extends Component
                 </div>
 
                 <div class="modal-footer">
-                    <div>
-                        <strong>{{ count($activeSelectedIds) }}</strong>
-                        {{ __('pages.selected') }}
+                    <div class="zone-footer-summary">
+                        <span><strong>{{ count($activeSelectedIds) }}</strong> {{ __('pages.selected') }}</span>
+                        <span>Total Area: <strong>{{ number_format($activeSelectedArea, 2) }} Ha</strong></span>
                     </div>
 
                     <div class="zone-selected-preview">
