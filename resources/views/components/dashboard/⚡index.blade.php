@@ -122,7 +122,7 @@ new class extends Component
     $cycleType = $register?->plantingCycleType;
 
     if (!$cycleType) {
-        return null;
+        return 'cycle_type_not_set';
     }
 
     $text = mb_strtolower(
@@ -402,52 +402,78 @@ new class extends Component
                 'label' => 'Land Vacancy',
                 'icon' => '△',
             ],
+            [
+                'key' => 'cycle_type_not_set',
+                'label' => 'Cycle Type Not Set',
+                'icon' => '?',
+            ],
 
         ];
 
         $summaryRows = collect(
-            $summaryDefinitions
-        )->map(function (array $definition) use (
-            $displayZones,
-            $zoneBlocksByZone,
-            $zoneAreaMap
-        ) {
-            $values = [];
+    $summaryDefinitions
+)->map(function (array $definition) use (
+    $displayZones,
+    $zoneBlocksByZone,
+    $zoneAreaMap
+) {
+    $values = [];
+    $blocks = [];
 
-            foreach ($displayZones as $zone) {
-                $zoneId = (int) $zone->id;
+    foreach ($displayZones as $zone) {
+        $zoneId = (int) $zone->id;
 
-                if ($definition['key'] === 'total_area') {
-                    $values[$zoneId] = $zoneAreaMap[$zoneId] ?? 0;
+        if ($definition['key'] === 'total_area') {
+            $values[$zoneId] = $zoneAreaMap[$zoneId] ?? 0;
+            $blocks[$zoneId] = [];
 
-                    continue;
-                }
+            continue;
+        }
 
-                $zoneBlocks = $zoneBlocksByZone->get(
-                    $zoneId,
-                    collect()
-                );
+        $zoneBlocks = $zoneBlocksByZone->get(
+            $zoneId,
+            collect()
+        );
 
-                $values[$zoneId] = $zoneBlocks
-                    ->filter(
-                        fn (ZoneBlock $block) =>
-                            $this->getZoneBlockCategory($block)
-                            === $definition['key']
-                    )
-                    ->sum(
-                        fn (ZoneBlock $block) =>
-                            $this->getZoneBlockArea($block)
-                    );
-            }
+        $matchedBlocks = $zoneBlocks
+            ->filter(
+                fn (ZoneBlock $block) =>
+                    $this->getZoneBlockCategory($block)
+                    === $definition['key']
+            )
+            ->values();
 
-            return [
-                'key' => $definition['key'],
-                'label' => $definition['label'],
-                'icon' => $definition['icon'],
-                'values' => $values,
-                'total' => array_sum($values),
-            ];
-        });
+        $values[$zoneId] = round(
+            (float) $matchedBlocks->sum(
+                fn (ZoneBlock $block) =>
+                    $this->getZoneBlockArea($block)
+            ),
+            2
+        );
+
+        $blocks[$zoneId] =
+            $definition['key'] === 'cycle_type_not_set'
+                ? $matchedBlocks
+                    ->pluck('block_code')
+                    ->filter()
+                    ->map(fn ($code) => trim((string) $code))
+                    ->values()
+                    ->all()
+                : [];
+    }
+
+    return [
+        'key' => $definition['key'],
+        'label' => $definition['label'],
+        'icon' => $definition['icon'],
+        'values' => $values,
+        'blocks' => $blocks,
+        'total' => round(
+            (float) array_sum($values),
+            2
+        ),
+    ];
+});
 
         $displayedZoneBlockIds = $unitColumns
             ->flatMap(function (array $unit) use ($zoneBlockIdsByZone) {
@@ -974,8 +1000,9 @@ new class extends Component
 
         .fod-matrix-scroll {
             position: relative;
+            max-height: calc(100vh - 130px);
             overflow-x: auto;
-            overflow-y: hidden;
+            overflow-y: auto;
             border: 1px solid var(--fod-border);
             border-radius: 20px;
             background: rgba(255, 255, 255, 0.96);
@@ -1014,6 +1041,19 @@ new class extends Component
                     #ffffff,
                     #fbfcfe
                 );
+        }
+                /* Keep the first dashboard row fixed when scrolling */
+        .fod-corner-card,
+        .fod-unit-header {
+            position: sticky;
+            top: 0;
+            z-index: 25;
+            background: #ffffff;
+            box-shadow: 0 5px 12px rgba(15, 23, 42, 0.06);
+        }
+
+        .fod-unit-header.is-total {
+            background: #f8fafc;
         }
 
         .fod-corner-card {
@@ -1104,6 +1144,28 @@ new class extends Component
             border-radius: 12px;
             background: #ffffff;
         }
+        .fod-summary-value-content {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+}
+
+.fod-summary-value-content strong {
+    display: block;
+    font-size: 17px;
+    font-weight: 900;
+}
+
+.fod-summary-value-content small {
+    display: block;
+    margin-top: 5px;
+    overflow-wrap: anywhere;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1.35;
+    white-space: normal;
+}
 
         .fod-summary-label {
             position: relative;
@@ -1703,22 +1765,60 @@ new class extends Component
                         $summaryValue =
                             $summaryRow['values'][$unit['id']] ?? 0;
 
+                        $summaryBlocks =
+                            $summaryRow['blocks'][$unit['id']] ?? [];
+
                         $summaryValueClass =
                             $summaryRow['key'] === 'land_vacancy'
                                 ? 'is-danger'
                                 : ($unitIndex === 0 ? 'is-primary' : '');
                     @endphp
 
-                    <div
-                        class="fod-summary-value {{ $summaryValueClass }}"
-                    >
-                        {{ number_format($summaryValue, 2) }} ha
+                   <div class="fod-summary-value {{ $summaryValueClass }}">
+                        <div class="fod-summary-value-content">
+                            <strong>
+                                {{ number_format($summaryValue, 2) }} ha
+                            </strong>
+
+                            @if(
+                                $summaryRow['key'] === 'cycle_type_not_set'
+                                && count($summaryBlocks) > 0
+                            )
+                                <small>
+                                    {{ implode(', ', $summaryBlocks) }}
+                                </small>
+                            @endif
+                        </div>
                     </div>
                 @endforeach
 
-                <div class="fod-summary-value is-total">
-                    {{ number_format($summaryRow['total'], 2) }} ha
-                </div>
+                @php
+    $totalSummaryBlocks = collect(
+        $summaryRow['blocks'] ?? []
+    )
+        ->flatten()
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+@endphp
+
+<div class="fod-summary-value is-total">
+    <div class="fod-summary-value-content">
+        <strong>
+            {{ number_format($summaryRow['total'], 2) }} ha
+        </strong>
+
+        @if(
+            $summaryRow['key'] === 'cycle_type_not_set'
+            && count($totalSummaryBlocks) > 0
+        )
+            <small>
+                {{ implode(', ', $totalSummaryBlocks) }}
+            </small>
+        @endif
+    </div>
+</div>
             @endforeach
 
             <div class="fod-section-title">
