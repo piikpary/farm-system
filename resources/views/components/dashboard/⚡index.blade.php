@@ -287,7 +287,14 @@ new class extends Component
             $selectedDate = now()->format('Y-m-d');
         }
 
+        $activeZoneIds = ZoneBlock::query()
+            ->where('status', 'active')
+            ->whereNotNull('zone_id')
+            ->distinct()
+            ->pluck('zone_id');
+
         $allZones = Zone::query()
+            ->whereIn('id', $activeZoneIds)
             ->orderBy('id')
             ->get();
 
