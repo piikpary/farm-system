@@ -404,7 +404,7 @@ new class extends Component
             ],
             [
                 'key' => 'cycle_type_not_set',
-                'label' => 'Cycle Type Not Set',
+                'label' => 'Not Set',
                 'icon' => '?',
             ],
 
