@@ -510,7 +510,7 @@ new class extends Component
                         <th>Planting Date</th>
                         <th>Cycle Type</th>
                         <th>Expected Harvest</th>
-                        <th>Status</th>
+                        
                         <th width="190">Action</th>
                     </tr>
                 </thead>
@@ -600,23 +600,7 @@ new class extends Component
                                         @enderror
                                     </td>
 
-                                    <td>
-                                        <select wire:model.live="editRow.status">
-                                            <option value="active">
-                                                Active
-                                            </option>
-
-                                            <option value="inactive">
-                                                Inactive
-                                            </option>
-                                        </select>
-
-                                        @error('editRow.status')
-                                            <small class="error">
-                                                {{ $message }}
-                                            </small>
-                                        @enderror
-                                    </td>
+                                   
 
                                     <td>
                                         <div class="table-actions">
@@ -691,19 +675,7 @@ new class extends Component
                                         }}
                                     </td>
 
-                                    <td>
-                                        @if($register)
-                                            <span
-                                                class="status {{ $register->status }}"
-                                            >
-                                                {{ ucfirst($register->status) }}
-                                            </span>
-                                        @else
-                                            <span class="status inactive">
-                                                Not Set
-                                            </span>
-                                        @endif
-                                    </td>
+                                    
 
                                     <td>
                                         <div class="table-actions">
@@ -725,7 +697,7 @@ new class extends Component
                             @endif
                         @empty
                             <tr>
-                                <td colspan="9" class="empty">
+                                <td colspan="8" class="empty">
                                     No zone block found.
                                 </td>
                             </tr>
