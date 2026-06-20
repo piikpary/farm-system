@@ -15,16 +15,13 @@ new class extends Component
 
     public $search = '';
     public $perPage = 15;
-    public $rows = [];
 
     public $editingId = null;
 
     public $editRow = [
-        'zone_block_id' => '',
-        'variety' => '',
         'planting_date' => '',
         'planting_cycle_type_id' => '',
-        'expected_harvest' => '',
+        'expected_harvest_date' => '',
         'status' => 'active',
     ];
 
@@ -38,88 +35,35 @@ new class extends Component
         $this->resetPage();
     }
 
-    public function addRow()
-    {
-        $this->rows[] = $this->emptyRow();
-    }
-
-    public function emptyRow()
-    {
-        return [
-            'zone_block_id' => '',
-            'variety' => '',
-            'planting_date' => '',
-            'planting_cycle_type_id' => '',
-            'expected_harvest' => '',
-            'status' => 'active',
-        ];
-    }
-
-    public function removeRow($index)
-    {
-        if (!isset($this->rows[$index])) {
-            return;
-        }
-
-        unset($this->rows[$index]);
-        $this->rows = array_values($this->rows);
-    }
-
-    public function saveRow($index)
-    {
-        if (!auth()->user()->hasPermission('block_registers.create')) {
-            abort(403, 'Permission denied.');
-        }
-
-        if (!isset($this->rows[$index])) {
-            return;
-        }
-
-        $this->validate([
-            "rows.$index.zone_block_id" => 'required|exists:zone_blocks,id',
-            "rows.$index.variety" => 'nullable|string|max:150',
-            "rows.$index.planting_date" => 'nullable|date',
-            "rows.$index.planting_cycle_type_id" => 'nullable|exists:planting_cycle_types,id',
-            "rows.$index.expected_harvest" => 'nullable|date',
-            "rows.$index.status" => 'required|in:active,inactive',
-        ]);
-
-        $row = $this->rows[$index];
-
-        BlockRegister::create([
-            'zone_block_id' => $row['zone_block_id'],
-            'variety' => $row['variety'] ?: null,
-            'planting_date' => $row['planting_date'] ?: null,
-            'planting_cycle_type_id' => $row['planting_cycle_type_id'] ?: null,
-            'expected_harvest' => $row['expected_harvest'] ?: null,
-            'status' => $row['status'],
-            'created_by' => Auth::id(),
-            'updated_by' => Auth::id(),
-        ]);
-
-        unset($this->rows[$index]);
-        $this->rows = array_values($this->rows);
-
-        session()->flash('success', 'Block register saved successfully.');
-    }
-
-    public function edit($id)
+    public function edit($zoneBlockId)
     {
         if (!auth()->user()->hasPermission('block_registers.edit')) {
             abort(403, 'Permission denied.');
         }
 
-        $register = BlockRegister::findOrFail($id);
+        $zoneBlock = ZoneBlock::with([
+            'zone',
+            'blockRegister.plantingCycleType',
+        ])->findOrFail($zoneBlockId);
 
-        $this->editingId = $register->id;
+        $register = $zoneBlock->blockRegister;
+
+        $this->editingId = $zoneBlock->id;
 
         $this->editRow = [
-            'zone_block_id' => $register->zone_block_id,
-            'variety' => $register->variety,
-            'planting_date' => optional($register->planting_date)->format('Y-m-d') ?: $register->planting_date,
-            'planting_cycle_type_id' => $register->planting_cycle_type_id,
-            'expected_harvest' => optional($register->expected_harvest)->format('Y-m-d') ?: $register->expected_harvest,
-            'status' => $register->status,
+            'planting_date' => $register?->planting_date
+                ? $register->planting_date->format('Y-m-d')
+                : '',
+
+            'planting_cycle_type_id' =>
+                $register?->planting_cycle_type_id ?? '',
+
+            'expected_harvest_date' =>
+                $register?->expected_harvest_date
+                    ? $register->expected_harvest_date->format('Y-m-d')
+                    : '',
+
+            'status' => $register?->status ?? 'active',
         ];
     }
 
@@ -128,11 +72,9 @@ new class extends Component
         $this->editingId = null;
 
         $this->editRow = [
-            'zone_block_id' => '',
-            'variety' => '',
             'planting_date' => '',
             'planting_cycle_type_id' => '',
-            'expected_harvest' => '',
+            'expected_harvest_date' => '',
             'status' => 'active',
         ];
     }
@@ -143,69 +85,130 @@ new class extends Component
             abort(403, 'Permission denied.');
         }
 
-        $register = BlockRegister::findOrFail($this->editingId);
+        $zoneBlock = ZoneBlock::findOrFail($this->editingId);
 
         $this->validate([
-            'editRow.zone_block_id' => 'required|exists:zone_blocks,id',
-            'editRow.variety' => 'nullable|string|max:150',
-            'editRow.planting_date' => 'nullable|date',
-            'editRow.planting_cycle_type_id' => 'nullable|exists:planting_cycle_types,id',
-            'editRow.expected_harvest' => 'nullable|date',
-            'editRow.status' => 'required|in:active,inactive',
+            'editRow.planting_date' =>
+                'nullable|date',
+
+            'editRow.planting_cycle_type_id' =>
+                'nullable|exists:planting_cycle_types,id',
+
+            'editRow.expected_harvest_date' =>
+                'nullable|date|after_or_equal:editRow.planting_date',
+
+            'editRow.status' =>
+                'required|in:active,inactive',
         ]);
 
-        $register->update([
-            'zone_block_id' => $this->editRow['zone_block_id'],
-            'variety' => $this->editRow['variety'] ?: null,
-            'planting_date' => $this->editRow['planting_date'] ?: null,
-            'planting_cycle_type_id' => $this->editRow['planting_cycle_type_id'] ?: null,
-            'expected_harvest' => $this->editRow['expected_harvest'] ?: null,
-            'status' => $this->editRow['status'],
-            'updated_by' => Auth::id(),
+        $register = BlockRegister::firstOrNew([
+            'zone_block_id' => $zoneBlock->id,
         ]);
+
+        if (!$register->exists) {
+            $register->created_by = Auth::id();
+        }
+
+        $register->planting_date =
+            filled($this->editRow['planting_date'])
+                ? $this->editRow['planting_date']
+                : null;
+
+        $register->planting_cycle_type_id =
+            filled($this->editRow['planting_cycle_type_id'])
+                ? $this->editRow['planting_cycle_type_id']
+                : null;
+
+        $register->expected_harvest_date =
+            filled($this->editRow['expected_harvest_date'])
+                ? $this->editRow['expected_harvest_date']
+                : null;
+
+        $register->status = $this->editRow['status'];
+        $register->updated_by = Auth::id();
+        $register->save();
 
         $this->cancelEdit();
 
-        session()->flash('success', 'Block register updated successfully.');
-    }
-
-    public function delete($id)
-    {
-        if (!auth()->user()->hasPermission('block_registers.delete')) {
-            abort(403, 'Permission denied.');
-        }
-
-        BlockRegister::findOrFail($id)->delete();
-
-        session()->flash('success', 'Block register deleted successfully.');
+        session()->flash(
+            'success',
+            'Block register updated successfully.'
+        );
     }
 
     public function resetFilter()
     {
         $this->search = '';
         $this->perPage = 15;
+
         $this->resetPage();
     }
 
     private function registersQuery()
     {
-        return BlockRegister::with(['zoneBlock.zone', 'plantingCycleType'])
-            ->when($this->search, function ($q) {
-                $q->where(function ($query) {
-                    $query->where('variety', 'like', '%' . $this->search . '%')
-                        ->orWhere('status', 'like', '%' . $this->search . '%')
-                        ->orWhereHas('zoneBlock', function ($blockQuery) {
-                            $blockQuery->where('block_code', 'like', '%' . $this->search . '%')
-                                ->orWhere('name', 'like', '%' . $this->search . '%')
-                                ->orWhereHas('zone', function ($zoneQuery) {
-                                    $zoneQuery->where('zone_code', 'like', '%' . $this->search . '%')
-                                        ->orWhere('name', 'like', '%' . $this->search . '%');
-                                });
-                        })
-                        ->orWhereHas('plantingCycleType', function ($cycleQuery) {
-                            $cycleQuery->where('code', 'like', '%' . $this->search . '%')
-                                ->orWhere('name', 'like', '%' . $this->search . '%');
-                        });
+        return ZoneBlock::query()
+            ->with([
+                'zone',
+                'blockRegister.plantingCycleType',
+            ])
+            ->when($this->search, function ($query) {
+                $search = trim($this->search);
+
+                $query->where(function ($subQuery) use ($search) {
+                    $subQuery
+                        ->where(
+                            'block_code',
+                            'like',
+                            '%' . $search . '%'
+                        )
+                        ->orWhere(
+                            'name',
+                            'like',
+                            '%' . $search . '%'
+                        )
+                        ->orWhereHas(
+                            'zone',
+                            function ($zoneQuery) use ($search) {
+                                $zoneQuery
+                                    ->where(
+                                        'zone_code',
+                                        'like',
+                                        '%' . $search . '%'
+                                    )
+                                    ->orWhere(
+                                        'name',
+                                        'like',
+                                        '%' . $search . '%'
+                                    );
+                            }
+                        )
+                        ->orWhereHas(
+                            'blockRegister',
+                            function ($registerQuery) use ($search) {
+                                $registerQuery
+                                    ->where(
+                                        'status',
+                                        'like',
+                                        '%' . $search . '%'
+                                    )
+                                    ->orWhereHas(
+                                        'plantingCycleType',
+                                        function ($cycleQuery) use ($search) {
+                                            $cycleQuery
+                                                ->where(
+                                                    'code',
+                                                    'like',
+                                                    '%' . $search . '%'
+                                                )
+                                                ->orWhere(
+                                                    'name',
+                                                    'like',
+                                                    '%' . $search . '%'
+                                                );
+                                        }
+                                    );
+                            }
+                        );
                 });
             });
     }
@@ -213,34 +216,28 @@ new class extends Component
     public function getRegistersProperty()
     {
         return $this->registersQuery()
-            ->latest('planting_date')
-            ->latest('id')
+            ->orderBy('zone_id')
+            ->orderBy('block_code')
             ->paginate((int) $this->perPage);
     }
 
     public function getTotalAreaProperty()
     {
         return (clone $this->registersQuery())
-            ->get()
-            ->sum(function ($register) {
-                return (float) optional($register->zoneBlock)->area;
-            });
+            ->sum('area');
     }
 
     public function getTotalRegistersProperty()
     {
-        return (clone $this->registersQuery())->count();
+        return (clone $this->registersQuery())
+            ->count();
     }
 
     public function with()
     {
         return [
-            'zoneBlocks' => ZoneBlock::with('zone')
+            'cycleTypes' => PlantingCycleType::query()
                 ->where('status', 'active')
-                ->orderBy('block_code')
-                ->get(),
-
-            'cycleTypes' => PlantingCycleType::where('status', 'active')
                 ->orderBy('code')
                 ->get(),
         ];
@@ -507,10 +504,9 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Block *</th>
+                        <th>Block</th>
                         <th>Zone</th>
                         <th>Area (Ha)</th>
-                        <th>Variety</th>
                         <th>Planting Date</th>
                         <th>Cycle Type</th>
                         <th>Expected Harvest</th>
@@ -519,314 +515,249 @@ new class extends Component
                     </tr>
                 </thead>
 
-                <tbody>
-                    @forelse($this->registers as $register)
-                        @if($editingId === $register->id)
-                            <tr class="new-row">
-                                <td class="row-no">
-                                    {{ ($this->registers->firstItem() ?? 1) + $loop->index }}
-                                </td>
+                    <tbody>
+                        @forelse($this->registers as $zoneBlock)
+                            @php
+                                $register = $zoneBlock->blockRegister;
+                            @endphp
 
-                                <td>
-                                    <select class="block-select"
-                                            wire:model.live="editRow.zone_block_id">
-                                        <option value="">Select Block</option>
-                                        @foreach($zoneBlocks as $block)
-                                            <option value="{{ $block->id }}">
-                                                {{ $block->block_code }}
-                                                {{ $block->name ? '- ' . $block->name : '' }}
-                                                {{ $block->zone ? '(' . $block->zone->zone_code . ')' : '' }}
+                            @if($editingId === $zoneBlock->id)
+                                <tr
+                                    class="new-row"
+                                    wire:key="edit-zone-block-{{ $zoneBlock->id }}"
+                                >
+                                    <td class="row-no">
+                                        {{
+                                            ($this->registers->firstItem() ?? 1)
+                                            + $loop->index
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        {{ $zoneBlock->block_code }}
+                                    </td>
+
+                                    <td>
+                                        {{ $zoneBlock->zone?->zone_code ?? '-' }}
+                                    </td>
+
+                                    <td>
+                                        {{
+                                            number_format(
+                                                (float) $zoneBlock->area,
+                                                2
+                                            )
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        <input
+                                            type="date"
+                                            wire:model.live="editRow.planting_date"
+                                        >
+
+                                        @error('editRow.planting_date')
+                                            <small class="error">
+                                                {{ $message }}
+                                            </small>
+                                        @enderror
+                                    </td>
+
+                                    <td>
+                                        <select
+                                            wire:model.live="editRow.planting_cycle_type_id"
+                                        >
+                                            <option value="">
+                                                Select Cycle
                                             </option>
-                                        @endforeach
-                                    </select>
-                                    @error('editRow.zone_block_id')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
 
-                                <td>
-                                    @php
-                                        $selectedEditBlock = $zoneBlocks->firstWhere('id', (int) $editRow['zone_block_id']);
-                                    @endphp
+                                            @foreach($cycleTypes as $cycleType)
+                                                <option value="{{ $cycleType->id }}">
+                                                    {{ $cycleType->code }}
+                                                    -
+                                                    {{ $cycleType->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
 
-                                    {{ optional(optional($selectedEditBlock)->zone)->zone_code ?? '-' }}
-                                </td>
+                                        @error('editRow.planting_cycle_type_id')
+                                            <small class="error">
+                                                {{ $message }}
+                                            </small>
+                                        @enderror
+                                    </td>
 
-                                <td>
-                                    {{ number_format((float) optional($selectedEditBlock)->area, 2) }}
-                                </td>
+                                    <td>
+                                        <input
+                                            type="date"
+                                            wire:model.live="editRow.expected_harvest_date"
+                                        >
 
-                                <td>
-                                    <input type="text"
-                                           wire:model.live="editRow.variety"
-                                           placeholder="KK3">
-                                    @error('editRow.variety')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
+                                        @error('editRow.expected_harvest_date')
+                                            <small class="error">
+                                                {{ $message }}
+                                            </small>
+                                        @enderror
+                                    </td>
 
-                                <td>
-                                    <input type="date"
-                                           wire:model.live="editRow.planting_date">
-                                    @error('editRow.planting_date')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
-
-                                <td>
-                                    <select wire:model.live="editRow.planting_cycle_type_id">
-                                        <option value="">Select Cycle</option>
-                                        @foreach($cycleTypes as $cycleType)
-                                            <option value="{{ $cycleType->id }}">
-                                                {{ $cycleType->code }} - {{ $cycleType->name }}
+                                    <td>
+                                        <select wire:model.live="editRow.status">
+                                            <option value="active">
+                                                Active
                                             </option>
-                                        @endforeach
-                                    </select>
-                                    @error('editRow.planting_cycle_type_id')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
 
-                                <td>
-                                    <input type="date"
-                                           wire:model.live="editRow.expected_harvest">
-                                    @error('editRow.expected_harvest')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
+                                            <option value="inactive">
+                                                Inactive
+                                            </option>
+                                        </select>
 
-                                <td>
-                                    <select wire:model.live="editRow.status">
-                                        <option value="active">Active</option>
-                                        <option value="inactive">Inactive</option>
-                                    </select>
-                                    @error('editRow.status')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
+                                        @error('editRow.status')
+                                            <small class="error">
+                                                {{ $message }}
+                                            </small>
+                                        @enderror
+                                    </td>
 
-                                <td>
-                                    <div class="table-actions">
-                                        <button type="button"
+                                    <td>
+                                        <div class="table-actions">
+                                            <button
+                                                type="button"
                                                 wire:click="updateRow"
-                                                class="mini">
-                                            Save
-                                        </button>
+                                                class="mini"
+                                            >
+                                                Save
+                                            </button>
 
-                                        <button type="button"
+                                            <button
+                                                type="button"
                                                 wire:click="cancelEdit"
-                                                class="mini danger">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        @else
-                            <tr>
-                                <td class="row-no">
-                                    {{ ($this->registers->firstItem() ?? 1) + $loop->index }}
-                                </td>
-
-                                <td>{{ $register->zoneBlock->block_code ?? '-' }}</td>
-
-                                <td>{{ $register->zoneBlock->zone->zone_code ?? '-' }}</td>
-
-                                <td>{{ number_format((float) optional($register->zoneBlock)->area, 2) }}</td>
-
-                                <td>{{ $register->variety ?? '-' }}</td>
-
-                                <td>
-                                    {{ optional($register->planting_date)->format('d M Y') ?: ($register->planting_date ?? '-') }}
-                                </td>
-
-                                <td>
-                                    @if($register->plantingCycleType)
-                                        {{ $register->plantingCycleType->code }} - {{ $register->plantingCycleType->name }}
-                                    @else
-                                        -
-                                    @endif
-                                </td>
-
-                                <td>
-                                    {{ optional($register->expected_harvest)->format('d M Y') ?: ($register->expected_harvest ?? '-') }}
-                                </td>
-
-                                <td>
-                                    <span class="status {{ $register->status }}">
-                                        {{ ucfirst($register->status) }}
-                                    </span>
-                                </td>
-
-                                <td>
-                                    <div class="table-actions">
-                                        @if(auth()->user()->hasPermission('block_registers.edit'))
-                                            <button type="button"
-                                                    wire:click="edit({{ $register->id }})"
-                                                    class="mini">
-                                                Edit
+                                                class="mini danger"
+                                            >
+                                                Cancel
                                             </button>
-                                        @endif
-
-                                        @if(auth()->user()->hasPermission('block_registers.delete'))
-                                            <button type="button"
-                                                    wire:click="delete({{ $register->id }})"
-                                                    class="mini danger"
-                                                    onclick="return confirm('Delete this block register?')">
-                                                Delete
-                                            </button>
-                                        @endif
-                                    </div>
-                                </td>
-                            </tr>
-                        @endif
-                    @empty
-                        @if(count($rows) === 0)
-                            <tr>
-                                <td colspan="10" class="empty">
-                                    No block register found.
-                                </td>
-                            </tr>
-                        @endif
-                    @endforelse
-
-                    @foreach($rows as $index => $row)
-                        <tr class="new-row">
-                            <td class="row-no">
-                                <button type="button"
-                                        wire:click="removeRow({{ $index }})"
-                                        class="plus-cell danger-plus"
-                                        title="Remove row">
-                                    ×
-                                </button>
-                            </td>
-
-                            <td>
-                                <select class="block-select"
-                                        wire:model.live="rows.{{ $index }}.zone_block_id">
-                                    <option value="">Select Block</option>
-                                    @foreach($zoneBlocks as $block)
-                                        <option value="{{ $block->id }}">
-                                            {{ $block->block_code }}
-                                            {{ $block->name ? '- ' . $block->name : '' }}
-                                            {{ $block->zone ? '(' . $block->zone->zone_code . ')' : '' }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error("rows.$index.zone_block_id")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                @php
-                                    $selectedBlock = $zoneBlocks->firstWhere('id', (int) $row['zone_block_id']);
-                                @endphp
-
-                                {{ optional(optional($selectedBlock)->zone)->zone_code ?? '-' }}
-                            </td>
-
-                            <td>
-                                {{ number_format((float) optional($selectedBlock)->area, 2) }}
-                            </td>
-
-                            <td>
-                                <input type="text"
-                                       wire:model.live="rows.{{ $index }}.variety"
-                                       placeholder="KK3">
-                                @error("rows.$index.variety")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <input type="date"
-                                       wire:model.live="rows.{{ $index }}.planting_date">
-                                @error("rows.$index.planting_date")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <select wire:model.live="rows.{{ $index }}.planting_cycle_type_id">
-                                    <option value="">Select Cycle</option>
-                                    @foreach($cycleTypes as $cycleType)
-                                        <option value="{{ $cycleType->id }}">
-                                            {{ $cycleType->code }} - {{ $cycleType->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error("rows.$index.planting_cycle_type_id")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <input type="date"
-                                       wire:model.live="rows.{{ $index }}.expected_harvest">
-                                @error("rows.$index.expected_harvest")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <select wire:model.live="rows.{{ $index }}.status">
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                </select>
-                                @error("rows.$index.status")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <div class="table-actions">
-                                    <button type="button"
-                                            wire:click="saveRow({{ $index }})"
-                                            class="mini">
-                                        Save
-                                    </button>
-
-                                    <button type="button"
-                                            wire:click="removeRow({{ $index }})"
-                                            class="mini danger">
-                                        Remove
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-
-                <tfoot>
-                    <tr class="total-row">
-                        <td>
-                            @if(auth()->user()->hasPermission('block_registers.create'))
-                                <button type="button"
-                                        wire:click="addRow"
-                                        class="plus-cell"
-                                        title="Add row">
-                                    +
-                                </button>
+                                        </div>
+                                    </td>
+                                </tr>
                             @else
-                                -
+                                <tr wire:key="zone-block-register-{{ $zoneBlock->id }}">
+                                    <td class="row-no">
+                                        {{
+                                            ($this->registers->firstItem() ?? 1)
+                                            + $loop->index
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        {{ $zoneBlock->block_code }}
+                                    </td>
+
+                                    <td>
+                                        {{ $zoneBlock->zone?->zone_code ?? '-' }}
+                                    </td>
+
+                                    <td>
+                                        {{
+                                            number_format(
+                                                (float) $zoneBlock->area,
+                                                2
+                                            )
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        {{
+                                            $register?->planting_date
+                                                ? $register->planting_date->format('d M Y')
+                                                : '-'
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        @if($register?->plantingCycleType)
+                                            {{ $register->plantingCycleType->code }}
+                                            -
+                                            {{ $register->plantingCycleType->name }}
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+
+                                    <td>
+                                        {{
+                                            $register?->expected_harvest_date
+                                                ? $register->expected_harvest_date
+                                                    ->format('d M Y')
+                                                : '-'
+                                        }}
+                                    </td>
+
+                                    <td>
+                                        @if($register)
+                                            <span
+                                                class="status {{ $register->status }}"
+                                            >
+                                                {{ ucfirst($register->status) }}
+                                            </span>
+                                        @else
+                                            <span class="status inactive">
+                                                Not Set
+                                            </span>
+                                        @endif
+                                    </td>
+
+                                    <td>
+                                        <div class="table-actions">
+                                            @if(
+                                                auth()->user()
+                                                    ->hasPermission('block_registers.edit')
+                                            )
+                                                <button
+                                                    type="button"
+                                                    wire:click="edit({{ $zoneBlock->id }})"
+                                                    class="mini"
+                                                >
+                                                    Edit
+                                                </button>
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
                             @endif
-                        </td>
+                        @empty
+                            <tr>
+                                <td colspan="9" class="empty">
+                                    No zone block found.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
 
-                        <td colspan="2" class="total-label">
-                            Total Registers: {{ number_format((int) $this->totalRegisters) }}
-                        </td>
+                    <tfoot>
+                        <tr class="total-row">
+                            <td>-</td>
 
-                        <td>{{ number_format((float) $this->totalArea, 2) }}</td>
+                            <td colspan="2" class="total-label">
+                                Total Registers:
+                                {{ number_format((int) $this->totalRegisters) }}
+                            </td>
 
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
-                    </tr>
-                </tfoot>
-            </table>
+                            <td>
+                                {{
+                                    number_format(
+                                        (float) $this->totalArea,
+                                        2
+                                    )
+                                }}
+                            </td>
+
+                            <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                        </tr>
+                    </tfoot>
+                </table>
 
             <div class="pagination-wrap">
                 {{ $this->registers->links() }}

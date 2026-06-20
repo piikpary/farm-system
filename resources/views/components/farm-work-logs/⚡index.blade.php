@@ -1559,264 +1559,341 @@ new class extends Component
     @include('components.toast-alert')
 
     <style>
-        .filter-panel {
-            margin-bottom: 18px;
-        }
+    .filter-panel {
+        margin-bottom: 18px;
+    }
 
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .filter-grid label {
+        display: block;
+        font-weight: 900;
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: #334155;
+    }
+
+    .filter-grid input,
+    .filter-grid select {
+        width: 100%;
+        height: 46px;
+        border: 1px solid #d1d5db;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-weight: 700;
+        background: #ffffff;
+    }
+
+    .list-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+
+    .rows-control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rows-control label {
+        font-size: 13px;
+        font-weight: 900;
+        color: #334155;
+        margin: 0;
+    }
+
+    .rows-control select {
+        width: 130px;
+        height: 40px;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-weight: 800;
+        background: #ffffff;
+    }
+
+    .table-wrap {
+        overflow-x: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+    }
+
+    .work-table {
+        width: 100%;
+        min-width: 2050px;
+        border-collapse: collapse;
+        background: #ffffff;
+    }
+
+    .work-table th {
+        background: #f8fafc;
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        padding: 12px 10px;
+        border-bottom: 1px solid #e5e7eb;
+        white-space: nowrap;
+    }
+
+    .work-table td {
+        padding: 10px;
+        border-bottom: 1px solid #eef2f7;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .work-table input,
+    .work-table select {
+        width: 100%;
+        min-width: 125px;
+        height: 42px;
+        padding: 8px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        font-size: 13px;
+        background: #ffffff;
+        font-weight: 700;
+    }
+
+    .work-plan-select {
+        min-width: 300px !important;
+    }
+
+    .task-group-readonly {
+        min-width: 180px !important;
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        font-weight: 900 !important;
+    }
+
+    .zone-combo {
+        min-width: 300px;
+    }
+
+    .zone-block-select {
+        min-width: 280px !important;
+        width: 100% !important;
+        border-color: #bbf7d0 !important;
+        background: #ffffff !important;
+        max-height: 240px;
+        overflow-y: auto;
+    }
+
+    .zone-display {
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .sub-zone-display {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        font-weight: 900;
+        color: #15803d;
+    }
+
+    .row-no {
+        width: 45px;
+        min-width: 45px;
+        text-align: center;
+        font-weight: 900;
+        color: #64748b;
+    }
+
+    .new-row {
+        background: #f0fdf4;
+    }
+
+    .new-row td {
+        border-bottom: 1px solid #bbf7d0;
+    }
+
+    .table-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .total-row {
+        background: #f8fafc;
+        font-weight: 900;
+        border-top: 2px solid #d1d5db;
+    }
+
+    .total-row td {
+        border-bottom: 0;
+        padding: 14px 10px;
+        color: #0f172a;
+    }
+
+    .plus-cell {
+        width: 34px;
+        height: 34px;
+        border: none;
+        border-radius: 10px;
+        background: #16a34a;
+        color: #ffffff;
+        font-size: 20px;
+        font-weight: 900;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .plus-cell:hover {
+        background: #15803d;
+    }
+
+    .danger-plus {
+        background: #dc2626;
+    }
+
+    .danger-plus:hover {
+        background: #b91c1c;
+    }
+
+    .error {
+        display: block;
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        font-weight: 700;
+    }
+
+    .work-plan-label {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 12px;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .work-plan-label small {
+        color: #64748b;
+        font-weight: 800;
+    }
+
+    .work-plan-label {
+        display: inline-block;
+        min-width: 300px;
+        font-size: 13px;
+        font-weight: 900;
+        color: #0f172a;
+        white-space: nowrap;
+    }
+
+    .no-plan {
+        color: #dc2626;
+        font-weight: 900;
+    }
+
+    .empty {
+        padding: 30px !important;
+        text-align: center;
+        color: #64748b;
+        font-weight: 800;
+    }
+
+    @media (max-width: 1200px) {
         .filter-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 14px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+    }
 
-        .filter-grid label {
-            display: block;
-            font-weight: 900;
-            font-size: 13px;
-            margin-bottom: 6px;
-            color: #334155;
+    @media (max-width: 900px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
         }
+    }
 
-        .filter-grid input,
-        .filter-grid select {
-            width: 100%;
-            height: 46px;
-            border: 1px solid #d1d5db;
-            border-radius: 12px;
-            padding: 10px 12px;
-            font-weight: 700;
-            background: #ffffff;
-        }
+    /*
+     * Work Log row-size fix:
+     * Existing saved rows stay compact after Add New.
+     */
+    .work-table tbody > tr:not(.new-row) {
+        height: 52px !important;
+        min-height: 52px !important;
+        max-height: 52px !important;
+    }
 
-        .list-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 14px;
-            flex-wrap: wrap;
-            margin-bottom: 14px;
-        }
+    .work-table tbody > tr:not(.new-row) > td {
+        height: 52px !important;
+        min-height: 52px !important;
+        max-height: 52px !important;
+        padding-top: 7px !important;
+        padding-bottom: 7px !important;
+        vertical-align: middle !important;
+        line-height: 1.2 !important;
+    }
 
-        .rows-control {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+    /*
+     * Keep saved-row action buttons on one line.
+     */
+    .work-table tbody > tr:not(.new-row) .table-actions {
+        flex-wrap: nowrap !important;
+        white-space: nowrap !important;
+    }
 
-        .rows-control label {
-            font-size: 13px;
-            font-weight: 900;
-            color: #334155;
-            margin: 0;
-        }
+    .work-table tbody > tr:not(.new-row) .table-actions .mini {
+        flex: 0 0 auto !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        white-space: nowrap !important;
+    }
 
-        .rows-control select {
-            width: 130px;
-            height: 40px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            padding: 8px 10px;
-            font-weight: 800;
-            background: #ffffff;
-        }
+    /*
+     * Give the Action column enough space.
+     */
+    .work-table th:last-child,
+    .work-table td:last-child {
+        width: 150px !important;
+        min-width: 150px !important;
+    }
 
-        .table-wrap {
-            overflow-x: auto;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-        }
+    /*
+     * Only Add/Edit rows can increase their height.
+     */
+    .work-table tbody > tr.new-row {
+        height: auto !important;
+        min-height: 62px !important;
+        max-height: none !important;
+    }
 
-        .work-table {
-            width: 100%;
-            min-width: 2050px;
-            border-collapse: collapse;
-            background: #ffffff;
-        }
+    .work-table tbody > tr.new-row > td {
+        height: auto !important;
+        min-height: 62px !important;
+        max-height: none !important;
+        padding-top: 9px !important;
+        padding-bottom: 9px !important;
+        vertical-align: middle !important;
+    }
 
-        .work-table th {
-            background: #f8fafc;
-            color: #0f172a;
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-            padding: 12px 10px;
-            border-bottom: 1px solid #e5e7eb;
-            white-space: nowrap;
-        }
+    .work-table tbody > tr.new-row .table-actions {
+        flex-wrap: wrap !important;
+    }
 
-        .work-table td {
-            padding: 10px;
-            border-bottom: 1px solid #eef2f7;
-            vertical-align: middle;
-            white-space: nowrap;
-        }
-
-        .work-table input,
-        .work-table select {
-            width: 100%;
-            min-width: 125px;
-            height: 42px;
-            padding: 8px 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            font-size: 13px;
-            background: #ffffff;
-            font-weight: 700;
-        }
-
-        .work-plan-select {
-            min-width: 300px !important;
-        }
-
-        .task-group-readonly {
-            min-width: 180px !important;
-            background: #f8fafc !important;
-            color: #0f172a !important;
-            font-weight: 900 !important;
-        }
-
-        .zone-combo {
-            min-width: 300px;
-        }
-
-        .zone-block-select {
-            min-width: 280px !important;
-            width: 100% !important;
-            border-color: #bbf7d0 !important;
-            background: #ffffff !important;
-            max-height: 240px;
-            overflow-y: auto;
-        }
-
-        .zone-display {
-            font-weight: 900;
-            color: #0f172a;
-        }
-
-        .sub-zone-display {
-            display: block;
-            margin-top: 4px;
-            font-size: 12px;
-            font-weight: 900;
-            color: #15803d;
-        }
-
-        .row-no {
-            width: 45px;
-            min-width: 45px;
-            text-align: center;
-            font-weight: 900;
-            color: #64748b;
-        }
-
-        .new-row {
-            background: #f0fdf4;
-        }
-
-        .new-row td {
-            border-bottom: 1px solid #bbf7d0;
-        }
-
-        .table-actions {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .total-row {
-            background: #f8fafc;
-            font-weight: 900;
-            border-top: 2px solid #d1d5db;
-        }
-
-        .total-row td {
-            border-bottom: 0;
-            padding: 14px 10px;
-            color: #0f172a;
-        }
-
-        .plus-cell {
-            width: 34px;
-            height: 34px;
-            border: none;
-            border-radius: 10px;
-            background: #16a34a;
-            color: #ffffff;
-            font-size: 20px;
-            font-weight: 900;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .plus-cell:hover {
-            background: #15803d;
-        }
-
-        .danger-plus {
-            background: #dc2626;
-        }
-
-        .danger-plus:hover {
-            background: #b91c1c;
-        }
-
-        .error {
-            display: block;
-            color: #dc2626;
-            font-size: 12px;
-            margin-top: 4px;
-            font-weight: 700;
-        }
-
-        .work-plan-label {
-            display: inline-flex;
-            flex-direction: column;
-            gap: 2px;
-            font-size: 12px;
-            font-weight: 900;
-            color: #0f172a;
-        }
-
-        .work-plan-label small {
-            color: #64748b;
-            font-weight: 800;
-        }
-        .work-plan-label {
-            display: inline-block;
-            min-width: 300px;
-            font-size: 13px;
-            font-weight: 900;
-            color: #0f172a;
-            white-space: nowrap;
-        }
-
-        .no-plan {
-            color: #dc2626;
-            font-weight: 900;
-        }
-
-        .empty {
-            padding: 30px !important;
-            text-align: center;
-            color: #64748b;
-            font-weight: 800;
-        }
-
-        @media (max-width: 1200px) {
-            .filter-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-        }
-
-        @media (max-width: 900px) {
-            .filter-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    /*
+     * Keep the Work Log footer compact.
+     */
+    .work-table tfoot > tr,
+    .work-table tfoot > tr > td {
+        height: 58px !important;
+        min-height: 58px !important;
+        max-height: 58px !important;
+    }
+</style>
 
     <div class="page-header">
         <div>

@@ -40,4 +40,8 @@ class ZoneBlock extends Model
     {
         return $this->hasOne(BlockRegister::class)->where('status', 'active')->latest();
     }
+    public function blockRegister()
+    {
+        return $this->hasOne(BlockRegister::class)->latestOfMany();
+    }
 }

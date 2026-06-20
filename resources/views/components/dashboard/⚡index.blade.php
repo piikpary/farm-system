@@ -83,13 +83,19 @@ new class extends Component
     }
 
     private function getZoneName(Zone $zone, int $index): string
-    {
-        return $this->getModelText(
-            $zone,
-            ['name', 'zone_name', 'code', 'title'],
-            'U' . ($index + 1)
-        );
-    }
+{
+    return $this->getModelText(
+        $zone,
+        [
+            'zone_code',
+            'name',
+            'zone_name',
+            'code',
+            'title',
+        ],
+        'Zone ' . ($index + 1)
+    );
+}
 
     private function getZoneArea(Zone $zone): float
     {
@@ -101,86 +107,83 @@ new class extends Component
 
     private function getZoneBlockArea(ZoneBlock $zoneBlock): float
     {
-        return $this->getModelNumber(
-            $zoneBlock,
-            [
-                'area',
-                'total_area',
-                'block_area',
-                'hectares',
-                'hectare',
-                'size',
-            ]
+        return round(
+            max(0, (float) $zoneBlock->area),
+            2
         );
     }
 
     private function getZoneBlockCategory(
-        ZoneBlock $zoneBlock
-    ): ?string {
-        $values = [];
+    ZoneBlock $zoneBlock
+): ?string {
+    $register = $zoneBlock->activeRegister
+        ?? $zoneBlock->blockRegister;
 
-        foreach ([
-            'crop_type',
-            'cane_type',
-            'planting_type',
-            'land_type',
-            'land_status',
-            'category',
-            'type',
-            'name',
-            'block_name',
-        ] as $attribute) {
-            $value = $zoneBlock->getAttribute($attribute);
+    $cycleType = $register?->plantingCycleType;
 
-            if ($value !== null && trim((string) $value) !== '') {
-                $values[] = trim((string) $value);
-            }
-        }
-
-        $text = mb_strtolower(implode(' ', $values));
-
-        $text = preg_replace('/[_\-]+/u', ' ', $text);
-        $text = preg_replace('/\s+/u', ' ', $text);
-
-        if (
-            preg_match(
-                '/land vacancy|vacancy|vacant|empty land|unused land|fallow/u',
-                $text
-            )
-        ) {
-            return 'land_vacancy';
-        }
-
-        if (
-            preg_match(
-                '/3rd ratoon|third ratoon|ratoon 3|ratoon3|\br3\b/u',
-                $text
-            )
-        ) {
-            return 'third_ratoon';
-        }
-
-        if (
-            preg_match(
-                '/2nd ratoon|second ratoon|ratoon 2|ratoon2|\br2\b/u',
-                $text
-            )
-        ) {
-            return 'second_ratoon';
-        }
-
-        if (
-            preg_match(
-                '/new cane|plant cane|new planting|new crop/u',
-                $text
-            )
-        ) {
-            return 'new_cane';
-        }
-
+    if (!$cycleType) {
         return null;
     }
 
+    $text = mb_strtolower(
+        trim(
+            implode(' ', array_filter([
+                $cycleType->code ?? null,
+                $cycleType->name ?? null,
+            ]))
+        )
+    );
+
+    $text = preg_replace('/[_\-]+/u', ' ', $text);
+    $text = preg_replace('/\s+/u', ' ', $text);
+
+    if (
+        preg_match(
+            '/land vacancy|vacancy|vacant|empty land|unused land|fallow/u',
+            $text
+        )
+    ) {
+        return 'land_vacancy';
+    }
+
+    if (
+        preg_match(
+            '/3rd ratoon|third ratoon|ratoon 3|ratoon3|\br3\b/u',
+            $text
+        )
+    ) {
+        return 'third_ratoon';
+    }
+
+    if (
+        preg_match(
+            '/2nd ratoon|second ratoon|ratoon 2|ratoon2|\br2\b/u',
+            $text
+        )
+    ) {
+        return 'second_ratoon';
+    }
+
+    if (
+        preg_match(
+            '/1st ratoon|first ratoon|ratoon 1|ratoon1|\br1\b/u',
+            $text
+        )
+    ) {
+        return 'first_ratoon';
+    }
+
+    if (
+        preg_match(
+            '/new cane|plant cane|new planting|new crop|\bpc\b|\bnc\b/u',
+            $text
+        )
+    ) {
+        return 'new_cane';
+    }
+
+    return null;
+}
     private function getTaskName(
         TaskCategory $taskCategory
     ): string {
@@ -317,7 +320,13 @@ new class extends Component
             });
 
         $allZoneBlocks = ZoneBlock::query()
-            ->orderBy('id')
+            ->with([
+                'activeRegister.plantingCycleType',
+                'blockRegister.plantingCycleType',
+            ])
+            ->where('status', 'active')
+            ->orderBy('zone_id')
+            ->orderBy('block_code')
             ->get();
 
         $zoneBlocksByZone = $allZoneBlocks
@@ -331,6 +340,10 @@ new class extends Component
                     ->map(fn ($id) => (int) $id)
                     ->values()
             );
+            
+
+
+
 
         $zoneAreaMap = [];
 
@@ -342,13 +355,13 @@ new class extends Component
                 collect()
             );
 
-            $blockArea = $zoneBlocks->sum(
-                fn (ZoneBlock $block) => $this->getZoneBlockArea($block)
+            $zoneAreaMap[$zoneId] = round(
+                (float) $zoneBlocks->sum(
+                    fn (ZoneBlock $block) =>
+                        $this->getZoneBlockArea($block)
+                ),
+                2
             );
-
-            $zoneAreaMap[$zoneId] = $blockArea > 0
-                ? $blockArea
-                : $this->getZoneArea($zone);
         }
 
         $summaryDefinitions = [
@@ -361,6 +374,11 @@ new class extends Component
                 'key' => 'new_cane',
                 'label' => 'New Cane',
                 'icon' => '♧',
+            ],
+            [
+                'key' => 'first_ratoon',
+                'label' => '1st Ratoon',
+                'icon' => '↻',
             ],
             [
                 'key' => 'second_ratoon',
@@ -377,6 +395,7 @@ new class extends Component
                 'label' => 'Land Vacancy',
                 'icon' => '△',
             ],
+
         ];
 
         $summaryRows = collect(
@@ -734,8 +753,10 @@ new class extends Component
                 $selectedDate
             )->format('d M Y'),
 
-            'totalArea' => $summaryRows
-                ->firstWhere('key', 'total_area')['total'] ?? 0,
+            'totalArea' => round(
+                (float) array_sum($zoneAreaMap),
+                2
+            ),
 
             'dailyLogCount' => $dailyLogs->count(),
 
@@ -1053,6 +1074,17 @@ new class extends Component
             height: 29px;
             color: var(--fod-primary);
         }
+        .fod-unit-area {
+                margin-top: 2px;
+                color: var(--fod-primary);
+                font-size: 16px;
+                font-weight: 900;
+                line-height: 1;
+            }
+
+            .fod-unit-area.is-total {
+                color: #0f172a;
+            }
 
         .fod-unit-header.is-total .fod-unit-icon {
             color: #475569;
@@ -1504,18 +1536,6 @@ new class extends Component
     <div class="fod-header">
         <div class="fod-header-left">
             <div class="fod-logo">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <path d="M12 22V10"></path>
-                    <path d="M12 15c-4.5 0-7-2.6-7-7 4.5 0 7 2.5 7 7Z"></path>
-                    <path d="M12 10c0-4.5 2.6-7 7-7 0 4.5-2.5 7-7 7Z"></path>
-                </svg>
             </div>
 
             <div class="fod-heading">
@@ -1543,18 +1563,6 @@ new class extends Component
 
         <div class="fod-header-actions">
             <label class="fod-control">
-                <svg
-                    class="fod-control-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <rect x="3" y="5" width="18" height="16" rx="2"></rect>
-                    <path d="M16 3v4M8 3v4M3 10h18"></path>
-                </svg>
 
                 <input
                     type="date"
@@ -1564,20 +1572,6 @@ new class extends Component
             </label>
 
             <label class="fod-control">
-                <svg
-                    class="fod-control-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <path d="M4 21V10"></path>
-                    <path d="M4 10 10 4l6 6"></path>
-                    <path d="M16 21V10"></path>
-                    <path d="M20 21H2"></path>
-                </svg>
 
                 <select
                     wire:model.live="selectedZone"
@@ -1597,16 +1591,7 @@ new class extends Component
                 href="{{ route('farm-work-logs.create') }}"
                 class="fod-add-button"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <path d="M12 5v14M5 12h14"></path>
-                </svg>
+               
 
                 Add Work Log
             </a>
@@ -1654,50 +1639,41 @@ new class extends Component
             </div>
 
             @foreach($unitColumns as $unit)
-                <div class="fod-unit-header">
-                    <div class="fod-unit-name">
-                        {{ $unit['name'] }}
-                    </div>
+    @php
+        $unitArea =
+            $summaryRows
+                ->firstWhere('key', 'total_area')['values'][$unit['id']]
+            ?? 0;
+    @endphp
 
-                    <svg
-                        class="fod-unit-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path d="M12 22V8"></path>
-                        <path d="M12 12c-3.5 0-5.5-2-5.5-5.5 3.5 0 5.5 2 5.5 5.5Z"></path>
-                        <path d="M12 8c0-3.5 2-5.5 5.5-5.5 0 3.5-2 5.5-5.5 5.5Z"></path>
-                        <path d="M8 18h8"></path>
-                    </svg>
-                </div>
-            @endforeach
+    <div class="fod-unit-header">
+        <div class="fod-unit-name">
+            {{ $unit['name'] }}
+        </div>
+
+
+        <div class="fod-unit-area">
+            {{ number_format($unitArea, 2) }} ha
+        </div>
+    </div>
+@endforeach
 
             <div class="fod-unit-header is-total">
-                <div class="fod-unit-name">
-                    Total
-                </div>
+    <div class="fod-unit-name">
+        Total
+    </div>
 
-                <svg
-                    class="fod-unit-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <path d="M4 20V10"></path>
-                    <path d="M10 20V4"></path>
-                    <path d="M16 20v-7"></path>
-                    <path d="M22 20H2"></path>
-                </svg>
-            </div>
+    
 
-            @foreach($summaryRows as $summaryRow)
+    <div class="fod-unit-area is-total">
+        {{ number_format($totalArea, 2) }} ha
+    </div>
+</div>
+
+           @foreach(
+                    $summaryRows->where('key', '!=', 'total_area')
+                    as $summaryRow
+                )
                 <div class="fod-summary-label">
                     <div class="fod-summary-icon">
                         {{ $summaryRow['icon'] }}

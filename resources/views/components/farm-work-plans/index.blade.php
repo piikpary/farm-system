@@ -1265,7 +1265,7 @@ new class extends Component
     @include('components.shared-style')
     @include('components.toast-alert')
 
-    <style>
+     <style>
         .filter-panel {
             margin-bottom: 18px;
         }
@@ -2174,136 +2174,49 @@ new class extends Component
             }
         }
 
-        /* FIX ONLY: prevent saved rows from stretching after Add New */
-        .table-wrap {
-            height: auto !important;
-            min-height: 0 !important;
-            align-items: flex-start !important;
-        }
-
-        .table-wrap > table.plan-table {
-            display: table !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
-        .plan-table thead {
-            display: table-header-group !important;
-            height: auto !important;
-        }
-
-        .plan-table tbody {
-            display: table-row-group !important;
-            height: auto !important;
-            min-height: 0 !important;
-        }
-
-        .plan-table tfoot {
-            display: table-footer-group !important;
-            height: auto !important;
-        }
-
-        .plan-table tbody > tr:not(.activity-detail-row) {
-            display: table-row !important;
-            height: 52px !important;
-            min-height: 52px !important;
-            max-height: 52px !important;
-        }
-
-        .plan-table tbody > tr.new-row {
-            height: 58px !important;
-            min-height: 58px !important;
-            max-height: 58px !important;
-        }
-
-        .plan-table tbody > tr:not(.activity-detail-row) > td {
-            height: 52px !important;
-            min-height: 52px !important;
-            max-height: 52px !important;
-            padding-top: 7px !important;
-            padding-bottom: 7px !important;
-            vertical-align: middle !important;
-        }
-
-        .plan-table tbody > tr.new-row > td {
-            height: 58px !important;
-            min-height: 58px !important;
-            max-height: 58px !important;
-            padding-top: 8px !important;
-            padding-bottom: 8px !important;
-        }
-
-        .plan-table tbody > tr.activity-detail-row {
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
-        .plan-table tbody > tr.activity-detail-row > td {
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
-
         /*
-         * FINAL ROW-SIZE FIX ONLY:
-         * Keep saved Work Plan rows compact after Add New is clicked.
+         * Row height fix only:
+         * keep saved rows compact after Add New is clicked.
          */
-        .table-wrap {
-            height: auto !important;
-            min-height: 0 !important;
+        .plan-table tbody > tr:not(.new-row):not(.activity-detail-row) {
+            height: 52px !important;
+            min-height: 52px !important;
+            max-height: 52px !important;
         }
 
-        table.plan-table {
-            height: 1px !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
-        table.plan-table > thead,
-        table.plan-table > tbody,
-        table.plan-table > tfoot {
-            height: auto !important;
-            min-height: 0 !important;
-        }
-
-        table.plan-table > tbody > tr:not(.activity-detail-row) {
-            height: 1px !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
-        table.plan-table > tbody > tr:not(.activity-detail-row) > td {
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
+        .plan-table tbody > tr:not(.new-row):not(.activity-detail-row) > td {
+            height: 52px !important;
+            min-height: 52px !important;
+            max-height: 52px !important;
             padding-top: 7px !important;
             padding-bottom: 7px !important;
             vertical-align: middle !important;
+            line-height: 1.2 !important;
         }
 
-        table.plan-table > tbody > tr.new-row > td {
-            padding-top: 8px !important;
-            padding-bottom: 8px !important;
+        .plan-table tbody > tr:not(.new-row):not(.activity-detail-row) .table-actions {
+            flex-wrap: nowrap !important;
+            white-space: nowrap !important;
         }
 
-        table.plan-table > tbody > tr.activity-detail-row,
-        table.plan-table > tbody > tr.activity-detail-row > td {
+        .plan-table th:last-child,
+        .plan-table td:last-child {
+            width: 150px !important;
+            min-width: 150px !important;
+        }
+
+        .plan-table tbody > tr:not(.new-row):not(.activity-detail-row) .table-actions .mini {
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            white-space: nowrap !important;
+        }
+
+        .plan-table tbody > tr.new-row,
+        .plan-table tbody > tr.new-row > td {
             height: auto !important;
-            min-height: 0 !important;
+            min-height: 58px !important;
             max-height: none !important;
         }
-
-        table.plan-table > tfoot > tr,
-        table.plan-table > tfoot > tr > td {
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-        }
-
 
         /* View Activities modal stability and layout fix only */
         .view-activities-body {
@@ -2328,6 +2241,7 @@ new class extends Component
         }
 
     </style>
+
 
     <div class="page-header">
         <div>
@@ -3303,9 +3217,7 @@ new class extends Component
                                                 {{ $zoneTitle }}.{{ $block->block_code }}
                                             </span>
 
-                                            <span class="subzone-name">
-                                                {{ $block->name ?: __('pages.zone_block') }}
-                                            </span>
+                                            
 
                                             <span class="subzone-cycle-type">
                                                 
