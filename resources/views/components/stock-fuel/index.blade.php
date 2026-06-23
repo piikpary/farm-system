@@ -270,6 +270,13 @@ new class extends Component
     {
         return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->total_stock_out ?? 0));
     }
+    public function getTotalStockValueProperty()
+{
+    return $this->fuelStocks->sum(function ($stock) {
+        return (float) ($stock->current_stock ?? 0)
+            * (float) ($stock->purchase_price ?? 0);
+    });
+}
 };
 
 ?>
@@ -425,6 +432,7 @@ new class extends Component
                         <th>#</th>
                         <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
                         <th>{{ __('pages.purchase_price') ?? 'Purchase Price' }}</th>
+                        <th>Total Price</th>
                         <th>{{ __('pages.status') ?? 'Status' }}</th>
                         <th width="190">{{ __('pages.action') ?? 'Action' }}</th>
                     </tr>
@@ -454,6 +462,16 @@ new class extends Component
                                     @error('editRow.purchase_price')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
+                                </td>
+
+                                <td>
+                                    <strong>
+                                        ${{ number_format(
+                                            (float) ($editRow['current_stock'] ?: 0)
+                                            * (float) ($editRow['purchase_price'] ?: 0),
+                                            2
+                                        ) }}
+                                    </strong>
                                 </td>
 
                                 <td>
@@ -489,6 +507,14 @@ new class extends Component
                                 <td>
                                     ${{ number_format((float) $stock->purchase_price, 2) }}
                                 </td>
+                                <td>
+                                    <strong>
+                                        ${{ number_format(
+                                            (float) $stock->current_stock * (float) $stock->purchase_price,
+                                            2
+                                        ) }}
+                                    </strong>
+                                </td>
 
                                 <td>
                                     <span class="status {{ $stock->status }}">
@@ -514,7 +540,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="5" class="empty">
+                                <td colspan="6" class="empty">
                                     {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
                                 </td>
                             </tr>
@@ -551,6 +577,15 @@ new class extends Component
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
+                            <td>
+                                    <strong>
+                                        ${{ number_format(
+                                            (float) ($row['current_stock'] ?: 0)
+                                            * (float) ($row['purchase_price'] ?: 0),
+                                            2
+                                        ) }}
+                                    </strong>
+                                </td>
 
                             <td>
                                 <select wire:model.live="rows.{{ $index }}.status">
@@ -588,11 +623,19 @@ new class extends Component
                         </td>
 
                         <td class="green-number">
-                            {{ number_format((float) $this->totalCurrentStock, 2) }} L
-                        </td>
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
+                                {{ number_format((float) $this->totalCurrentStock, 2) }} L
+                            </td>
+
+                            <td>-</td>
+
+                            <td>
+                                <strong>
+                                    ${{ number_format((float) $this->totalStockValue, 2) }}
+                                </strong>
+                            </td>
+
+                            <td>-</td>
+                            <td>-</td>
                     </tr>
                 </tfoot>
             </table>

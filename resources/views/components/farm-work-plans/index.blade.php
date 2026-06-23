@@ -103,7 +103,7 @@ new class extends Component
     public function workPlanQtyLabel(): string
     {
         return $this->workPlanType === 'harvesting'
-            ? 'Plan Area (T)'
+            ? 'Plan Tons'
             : __('pages.plan_area_ha');
     }
 

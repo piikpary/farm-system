@@ -1066,6 +1066,55 @@ new class extends Component
             font-size: 13px;
             font-weight: 700;
         }
+        .fod-control.type-control {
+    overflow: hidden;
+    border-color: var(--fod-primary);
+    background:
+        linear-gradient(
+            145deg,
+            var(--fod-primary),
+            var(--fod-primary-dark)
+        );
+    box-shadow:
+        0 9px 20px rgba(21, 128, 61, 0.18);
+}
+
+.fod-control.type-control select {
+    min-width: 145px;
+    padding: 0 42px 0 18px;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 850;
+    text-align: center;
+    text-align-last: center;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.fod-control.type-control::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid #ffffff;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.fod-control.type-control select option {
+    color: #0f172a;
+    background: #ffffff;
+}
+
+.fod-control.type-control:hover {
+    box-shadow:
+        0 12px 25px rgba(21, 128, 61, 0.24);
+}
 
         .fod-control select {
             min-width: 145px;
@@ -1746,7 +1795,7 @@ new class extends Component
         </div>
 
         <div class="fod-header-actions">
-            <label class="fod-control">
+            <label class="fod-control type-control">
                 <select
                     wire:model.live="dashboardType"
                     aria-label="Dashboard type"
