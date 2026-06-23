@@ -321,6 +321,41 @@ new class extends Component
             'log_count' => 0,
         ];
     }
+    public function farmOverviewIconSvg($label): string
+{
+    $label = strtolower((string) $label);
+
+    if (str_contains($label, 'new cane')) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21C12 13 16 7 22 4C21 12 17 18 12 21Z"/>
+            <path d="M12 21C12 13 8 7 2 4C3 12 7 18 12 21Z"/>
+            <path d="M12 21V9"/>
+        </svg>';
+    }
+
+    if (str_contains($label, '1st') || str_contains($label, '2nd') || str_contains($label, '3rd')) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19H20"/>
+            <path d="M12 19V9"/>
+            <path d="M12 9C9 9 7 7 6 4C10 4 12 6 12 9Z"/>
+            <path d="M12 12C15 12 17 10 18 7C14 7 12 9 12 12Z"/>
+        </svg>';
+    }
+
+    if (str_contains($label, 'land vacancy')) {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 19H21"/>
+            <path d="M5 15L9 11L13 15L17 11L21 15"/>
+            <path d="M7 7H17"/>
+        </svg>';
+    }
+
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M9.8 9C10.3 7.8 11.2 7.2 12.5 7.2C14 7.2 15.2 8.2 15.2 9.6C15.2 11.8 12 11.7 12 14"/>
+        <path d="M12 17H12.01"/>
+    </svg>';
+}
 
     public function with(): array
     {
@@ -897,6 +932,23 @@ new class extends Component
             gap: 20px;
             margin-bottom: 18px;
         }
+        .farm-overview-icon {
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    border-radius: 12px;
+    background: #16a34a;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 22px rgba(22, 163, 74, 0.22);
+}
+
+.farm-overview-icon svg {
+    width: 25px;
+    height: 25px;
+}
 
         .fod-header-left {
             display: flex;
@@ -1266,6 +1318,10 @@ new class extends Component
             font-weight: 900;
             box-shadow:
                 0 7px 16px rgba(22, 163, 74, 0.16);
+        }
+        .fod-summary-icon svg {
+            width: 25px;
+            height: 25px;
         }
 
         .fod-summary-info {
@@ -1664,8 +1720,7 @@ new class extends Component
 
     <div class="fod-header">
         <div class="fod-header-left">
-            <div class="fod-logo">
-            </div>
+            
 
             <div class="fod-heading">
                 <h1>{{ $this->dashboardTypeLabel() }} Farm Operations Dashboard</h1>
@@ -1805,7 +1860,7 @@ new class extends Component
     
 
     <div class="fod-unit-area is-total">
-        {{ number_format($totalArea, 2) }} ha
+        {{ number_format($totalArea, 2) }} {{ $this->dashboardQtyUnitLabel() }}
     </div>
 </div>
 
@@ -1815,7 +1870,7 @@ new class extends Component
                 )
                 <div class="fod-summary-label">
                     <div class="fod-summary-icon">
-                        {{ $summaryRow['icon'] }}
+                        {!! $this->farmOverviewIconSvg($summaryRow['label'] ?? '') !!}
                     </div>
 
                     <div class="fod-summary-info">
