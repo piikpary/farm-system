@@ -25,6 +25,13 @@ new class extends Component
     public $dateFrom = '';
     public $dateTo = '';
     public $perPage = 15;
+    public $filterOpen = false;
+
+    public $workPlanType = 'planning';
+
+    protected $queryString = [
+        'workPlanType' => ['except' => 'planning'],
+    ];
 
     public $rows = [];
     public $editingId = null;
@@ -58,6 +65,96 @@ new class extends Component
     public function updatedDateFrom() { $this->resetPage(); }
     public function updatedDateTo() { $this->resetPage(); }
     public function updatedPerPage() { $this->resetPage(); }
+
+    public function mount()
+    {
+        if (!in_array($this->workPlanType, ['planning', 'harvesting'], true)) {
+            $this->workPlanType = 'planning';
+        }
+    }
+    public function toggleFilter()
+        {
+            $this->filterOpen = !$this->filterOpen;
+        }
+
+    public function updatedWorkPlanType()
+    {
+        if (!in_array($this->workPlanType, ['planning', 'harvesting'], true)) {
+            $this->workPlanType = 'planning';
+        }
+
+        $this->search = '';
+        $this->taskCategoryFilter = '';
+        $this->zoneBlockFilter = '';
+        $this->dateFrom = '';
+        $this->dateTo = '';
+        $this->rows = [];
+        $this->cancelEdit();
+        $this->resetPage();
+    }
+
+    public function workPlanTypeLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Harvesting'
+            : 'Planning';
+    }
+
+    public function workPlanQtyLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Plan Area (T)'
+            : __('pages.plan_area_ha');
+    }
+
+    public function workPlanRateLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Request L/T'
+            : __('pages.request_l_ha');
+    }
+
+    public function workPlanQtyUnitLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'T'
+            : 'Ha';
+    }
+
+    public function workPlanRateUnitLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'L/T'
+            : 'L/Ha';
+    }
+
+    public function workPlanActivityQtyLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Qty (T)'
+            : 'Zone Area (Ha)';
+    }
+
+    public function workPlanActivityRateLabel(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Fuel L/T'
+            : 'Fuel L/Ha';
+    }
+
+    public function workPlanFooterQtyTitle(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Plan Qty'
+            : 'Zone Area';
+    }
+
+    public function workPlanFooterRateTitle(): string
+    {
+        return $this->workPlanType === 'harvesting'
+            ? 'Total Fuel/T'
+            : 'Total Fuel/Ha';
+    }
 
     public function addRow()
     {
@@ -613,7 +710,9 @@ new class extends Component
         $this->validate([
             "rows.$index.task_category_group_id" => [
                 'required',
-                'exists:task_category_groups,id',
+                Rule::exists('task_category_groups', 'id')->where(
+                    fn ($query) => $query->where('group_type', $this->workPlanType)
+                ),
             ],
             "rows.$index.title" => 'nullable|string|max:255',
             "rows.$index.plan_date" => 'required|date',
@@ -810,7 +909,9 @@ new class extends Component
         $this->validate([
             'editRow.task_category_group_id' => [
                 'required',
-                'exists:task_category_groups,id',
+                Rule::exists('task_category_groups', 'id')->where(
+                    fn ($query) => $query->where('group_type', $this->workPlanType)
+                ),
             ],
             'editRow.title' => 'nullable|string|max:255',
             'editRow.plan_date' => 'required|date',
@@ -949,6 +1050,15 @@ new class extends Component
             'activities.taskCategory.group',
         ])
             ->withCount('workLogs')
+            ->where(function ($query) {
+                $query
+                    ->whereHas('activities.taskCategory.group', function ($groupQuery) {
+                        $groupQuery->where('group_type', $this->workPlanType);
+                    })
+                    ->orWhereHas('taskCategory.group', function ($groupQuery) {
+                        $groupQuery->where('group_type', $this->workPlanType);
+                    });
+            })
             ->when($this->search, function ($q) {
                 $search = trim($this->search);
 
@@ -1064,8 +1174,8 @@ new class extends Component
             'D1' => __('pages.plan_start'),
             'E1' => __('pages.plan_end'),
             'F1' => __('pages.zone_block'),
-            'G1' => __('pages.plan_area_ha'),
-            'H1' => __('pages.request_l_ha'),
+            'G1' => $this->workPlanQtyLabel(),
+            'H1' => $this->workPlanRateLabel(),
             'I1' => __('pages.request_l'),
             'J1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
         ];
@@ -1245,10 +1355,14 @@ new class extends Component
         return [
             'taskCategoryGroups' => TaskCategoryGroup::query()
                 ->where('status', true)
+                ->where('group_type', $this->workPlanType)
                 ->orderBy('name')
                 ->get(),
             'taskCategories' => TaskCategory::with('group')
                 ->where('status', 'active')
+                ->whereHas('group', function ($query) {
+                    $query->where('group_type', $this->workPlanType);
+                })
                 ->orderBy('name')
                 ->get(),
             'zoneBlocks' => $zoneBlocks,
@@ -1266,9 +1380,63 @@ new class extends Component
     @include('components.toast-alert')
 
      <style>
-        .filter-panel {
-            margin-bottom: 18px;
-        }
+       .filter-panel {
+    margin-bottom: 18px;
+    overflow: hidden;
+    padding: 0 18px !important;
+}
+
+.filter-toggle-header {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    user-select: none;
+    padding: 0;
+}
+
+.filter-toggle-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #2563eb;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.filter-toggle-title svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    color: #2563eb;
+}
+.filter-body {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(-6px);
+    transition:
+        max-height 0.35s ease,
+        opacity 0.25s ease,
+        transform 0.25s ease,
+        padding-top 0.25s ease,
+        padding-bottom 0.25s ease,
+        margin-top 0.25s ease;
+}
+
+.filter-panel.is-open .filter-body {
+    max-height: 420px;
+    opacity: 1;
+    margin-top: 8px;
+    padding-top: 14px;
+    padding-bottom: 18px;
+    border-top: 1px solid #e5e7eb;
+    transform: translateY(0);
+}
 
         .filter-grid {
             display: grid;
@@ -2245,8 +2413,12 @@ new class extends Component
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">{{ __('pages.farm_work_plans') }}</h1>
-            <p class="page-subtitle">{{ __('pages.farm_work_plans_subtitle') }}</p>
+            <h1 class="page-title">{{ $this->workPlanTypeLabel() }} Work Plans</h1>
+            <p class="page-subtitle">
+                {{ $this->workPlanType === 'harvesting'
+                    ? 'Harvesting work plans use Tons (T) and L/T.'
+                    : __('pages.farm_work_plans_subtitle') }}
+            </p>
         </div>
 
         <div class="page-actions">
@@ -2256,9 +2428,28 @@ new class extends Component
         </div>
     </div>
 
-    <div class="panel filter-panel">
-        <h2 class="panel-title">{{ __('pages.filter') }}</h2>
+    <div class="panel filter-panel {{ $filterOpen ? 'is-open' : '' }}">
+    <button
+        type="button"
+        class="filter-toggle-header"
+        wire:click="toggleFilter"
+    >
+        <span class="filter-toggle-title">
+    <svg
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 .8 1.6L14 14.67V20a1 1 0 0 1-1.45.89l-4-2A1 1 0 0 1 8 18v-3.33L3.2 5.6A1 1 0 0 1 3 5Z" />
+    </svg>
 
+    <span>
+        {{ trans()->has('pages.filters') ? __('pages.filters') : 'Filters' }}
+    </span>
+</span>
+    </button>
+
+    <div class="filter-body">
         <div class="filter-grid">
             <div>
                 <label>{{ __('pages.search') }}</label>
@@ -2314,7 +2505,7 @@ new class extends Component
             </button>
         </div>
     </div>
-
+</div>
     <div class="panel">
         <div class="list-header">
             <h2 class="panel-title" style="margin: 0;">
@@ -2369,8 +2560,8 @@ new class extends Component
                         <th>{{ __('pages.plan_start') }}</th>
                         <th>{{ __('pages.plan_end') }}</th>
                         <th>{{ __('pages.zone_block') }}</th>
-                        <th>{{ __('pages.plan_area_ha') }}</th>
-                        <th>{{ __('pages.request_l_ha') }}</th>
+                        <th>{{ $this->workPlanQtyLabel() }}</th>
+                        <th>{{ $this->workPlanRateLabel() }}</th>
                         <th>{{ __('pages.request_l') }}</th>
                         <th>Work Logs</th>
                         <th>{{ __('pages.action') }}</th>
@@ -2460,7 +2651,7 @@ new class extends Component
                                     >
                                         <span>
                                             {{ $this->getZoneBlockSummary($editRow['zone_block_ids'] ?? []) }}
-                                            <small>{{ number_format($editSelectedZoneArea, 2) }} Ha</small>
+                                            <small>{{ number_format($editSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}</small>
                                         </span>
 
                                         <span class="zone-select-count">
@@ -2571,7 +2762,7 @@ new class extends Component
                         </div>
 
                         <div>
-                            <label class="activity-editor-label">Zone Area (Ha)</label>
+                            <label class="activity-editor-label">{{ $this->workPlanActivityQtyLabel() }}</label>
                             <input
                                 type="text"
                                 value="{{ number_format($editPlanArea, 2) }}"
@@ -2580,7 +2771,7 @@ new class extends Component
                         </div>
 
                         <div>
-                            <label class="activity-editor-label">Fuel L/Ha</label>
+                            <label class="activity-editor-label">{{ $this->workPlanActivityRateLabel() }}</label>
                             <input
                                 type="number"
                                 min="0"
@@ -2618,8 +2809,14 @@ new class extends Component
             </div>
 
             <div class="activity-editor-footer">
-                <span>Zone Area: <strong>{{ number_format($editPlanArea, 2) }} Ha</strong></span>
-                <span>Total Fuel/Ha: <strong>{{ number_format($editFuelPerHa, 2) }} L/Ha</strong></span>
+                <span>
+                    {{ $this->workPlanFooterQtyTitle() }}:
+                    <strong>{{ number_format($editPlanArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}</strong>
+                </span>
+                <span>
+                    {{ $this->workPlanFooterRateTitle() }}:
+                    <strong>{{ number_format($editFuelPerHa, 2) }} {{ $this->workPlanRateUnitLabel() }}</strong>
+                </span>
                 <span>Total Fuel: <strong>{{ number_format($editRequestLiters, 2) }} L</strong></span>
             </div>
         </div>
@@ -2855,7 +3052,7 @@ new class extends Component
                                         ) }}
 
                                         <small>
-                                            {{ number_format($rowSelectedZoneArea, 2) }} Ha
+                                            {{ number_format($rowSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}
                                         </small>
                                     </span>
 
@@ -3001,8 +3198,8 @@ new class extends Component
                                 <tr>
                                     <th>#</th>
                                     <th>Activity</th>
-                                    <th>Zone Area (Ha)</th>
-                                    <th>Fuel L/Ha</th>
+                                    <th>{{ $this->workPlanActivityQtyLabel() }}</th>
+                                    <th>{{ $this->workPlanActivityRateLabel() }}</th>
                                     <th>Total Fuel (L)</th>
                                 </tr>
                             </thead>
@@ -3035,18 +3232,18 @@ new class extends Component
 
                     <div class="activity-summary-grid">
                         <div class="activity-summary-card">
-                            <span>Plan Area</span>
+                            <span>{{ $this->workPlanType === 'harvesting' ? 'Plan Qty' : 'Plan Area' }}</span>
                             <strong>
                                 {{ number_format($viewActivitiesPlan['plan_area'], 2) }}
-                                Ha
+                                {{ $this->workPlanQtyUnitLabel() }}
                             </strong>
                         </div>
 
                         <div class="activity-summary-card">
-                            <span>Total Fuel/Ha</span>
+                            <span>{{ $this->workPlanFooterRateTitle() }}</span>
                             <strong>
                                 {{ number_format($viewActivitiesPlan['request_l_per_hectare'], 2) }}
-                                L/Ha
+                                {{ $this->workPlanRateUnitLabel() }}
                             </strong>
                         </div>
 

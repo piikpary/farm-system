@@ -16,8 +16,18 @@ new class extends Component
 
     public string $selectedZone = 'all';
 
+    public string $dashboardType = 'planning';
+
+    protected $queryString = [
+        'dashboardType' => ['except' => 'planning'],
+    ];
+
     public function mount(): void
     {
+        if (!in_array($this->dashboardType, ['planning', 'harvesting'], true)) {
+            $this->dashboardType = 'planning';
+        }
+
         $latestWorkDate = FarmWorkLog::query()
             ->whereNotNull('work_date')
             ->max('work_date');
@@ -45,6 +55,41 @@ new class extends Component
         if (!Zone::query()->whereKey($value)->exists()) {
             $this->selectedZone = 'all';
         }
+    }
+
+    public function updatedDashboardType($value): void
+    {
+        if (!in_array($value, ['planning', 'harvesting'], true)) {
+            $this->dashboardType = 'planning';
+        }
+    }
+
+    public function dashboardTypeLabel(): string
+    {
+        return $this->dashboardType === 'harvesting'
+            ? 'Harvesting'
+            : 'Planning';
+    }
+
+    public function dashboardQtyUnitLabel(): string
+    {
+        return $this->dashboardType === 'harvesting'
+            ? 'T'
+            : 'ha';
+    }
+
+    public function dashboardFuelRateLabel(): string
+    {
+        return $this->dashboardType === 'harvesting'
+            ? 'L/T'
+            : 'L/ha';
+    }
+
+    public function dashboardActivitySubtitle(): string
+    {
+        return $this->dashboardType === 'harvesting'
+            ? 'Planned tons, completed tons and diesel usage by unit'
+            : 'Planned area, completed area and diesel usage by unit';
     }
 
     private function getModelText(
@@ -374,33 +419,35 @@ new class extends Component
         $summaryDefinitions = [
             [
                 'key' => 'total_area',
-                'label' => 'Total Area',
-                'icon' => '▦',
+                'label' => $this->dashboardType === 'harvesting'
+                    ? 'Total Tons'
+                    : 'Total Area',
+                'icon' => 'â–¦',
             ],
             [
                 'key' => 'new_cane',
                 'label' => 'New Cane',
-                'icon' => '♧',
+                'icon' => 'â™§',
             ],
             [
                 'key' => 'first_ratoon',
                 'label' => '1st Ratoon',
-                'icon' => '↻',
+                'icon' => 'â†»',
             ],
             [
                 'key' => 'second_ratoon',
                 'label' => '2nd Ratoon',
-                'icon' => '↻',
+                'icon' => 'â†»',
             ],
             [
                 'key' => 'third_ratoon',
                 'label' => '3rd Ratoon',
-                'icon' => '↺',
+                'icon' => 'â†º',
             ],
             [
                 'key' => 'land_vacancy',
                 'label' => 'Land Vacancy',
-                'icon' => '△',
+                'icon' => 'â–³',
             ],
             [
                 'key' => 'cycle_type_not_set',
@@ -495,6 +542,15 @@ new class extends Component
                     'zone_block_id',
                     $displayedZoneBlockIds->all()
                 )
+                ->where(function ($query) {
+                    $query
+                        ->whereHas('workPlan.activities.taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->dashboardType);
+                        })
+                        ->orWhereHas('workPlan.taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->dashboardType);
+                        });
+                })
                 ->get([
                     'id',
                     'farm_work_plan_id',
@@ -523,6 +579,10 @@ new class extends Component
                 ->keyBy('id');
 
         $allTaskCategories = TaskCategory::query()
+            ->with('group')
+            ->whereHas('group', function ($query) {
+                $query->where('group_type', $this->dashboardType);
+            })
             ->orderBy('id')
             ->get();
 
@@ -1608,7 +1668,7 @@ new class extends Component
             </div>
 
             <div class="fod-heading">
-                <h1>Farm Operations Dashboard</h1>
+                <h1>{{ $this->dashboardTypeLabel() }} Farm Operations Dashboard</h1>
 
                 <p>
                     Sugarcane farm overview and daily activity performance
@@ -1631,6 +1691,16 @@ new class extends Component
         </div>
 
         <div class="fod-header-actions">
+            <label class="fod-control">
+                <select
+                    wire:model.live="dashboardType"
+                    aria-label="Dashboard type"
+                >
+                    <option value="planning">Planning</option>
+                    <option value="harvesting">Harvesting</option>
+                </select>
+            </label>
+
             <label class="fod-control">
 
                 <input
@@ -1657,7 +1727,7 @@ new class extends Component
             </label>
 
             <a
-                href="{{ route('farm-work-logs.create') }}"
+                href="{{ route('farm-work-logs.create', ['workLogType' => $this->dashboardType]) }}"
                 class="fod-add-button"
             >
                
@@ -1676,7 +1746,7 @@ new class extends Component
         <div
             class="fod-loading"
             wire:loading.flex
-            wire:target="dashboardDate,selectedZone"
+            wire:target="dashboardDate,selectedZone,dashboardType"
         >
             <div class="fod-spinner"></div>
         </div>
@@ -1699,7 +1769,7 @@ new class extends Component
                 </div>
 
                 <div class="fod-corner-total">
-                    {{ number_format($totalArea, 2) }} ha
+                    {{ number_format($totalArea, 2) }} {{ $this->dashboardQtyUnitLabel() }}
                 </div>
 
                 <div class="fod-corner-date">
@@ -1722,7 +1792,7 @@ new class extends Component
 
 
         <div class="fod-unit-area">
-            {{ number_format($unitArea, 2) }} ha
+            {{ number_format($unitArea, 2) }} {{ $this->dashboardQtyUnitLabel() }}
         </div>
     </div>
 @endforeach
@@ -1755,7 +1825,7 @@ new class extends Component
 
                         <div class="fod-summary-total">
                             {{ number_format($summaryRow['total'], 2) }}
-                            ha
+                            {{ $this->dashboardQtyUnitLabel() }}
                         </div>
                     </div>
                 </div>
@@ -1777,7 +1847,7 @@ new class extends Component
                    <div class="fod-summary-value {{ $summaryValueClass }}">
                         <div class="fod-summary-value-content">
                             <strong>
-                                {{ number_format($summaryValue, 2) }} ha
+                                {{ number_format($summaryValue, 2) }} {{ $this->dashboardQtyUnitLabel() }}
                             </strong>
 
                             @if(
@@ -1806,7 +1876,7 @@ new class extends Component
 <div class="fod-summary-value is-total">
     <div class="fod-summary-value-content">
         <strong>
-            {{ number_format($summaryRow['total'], 2) }} ha
+            {{ number_format($summaryRow['total'], 2) }} {{ $this->dashboardQtyUnitLabel() }}
         </strong>
 
         @if(
@@ -1826,8 +1896,7 @@ new class extends Component
                     <h2>Activity Performance</h2>
 
                     <p>
-                        Planned area, completed area and diesel usage
-                        by unit
+                        {{ $this->dashboardActivitySubtitle() }}
                     </p>
                 </div>
 
@@ -1927,7 +1996,7 @@ new class extends Component
                                             $cell['plan_area'],
                                             2
                                         ) }}
-                                        ha
+                                        {{ $this->dashboardQtyUnitLabel() }}
                                     </span>
                                 </div>
 
@@ -1942,9 +2011,9 @@ new class extends Component
                                                 $cell['requested'],
                                                 2
                                             ) }}
-                                            L/ha
+                                            {{ $this->dashboardFuelRateLabel() }}
                                         @else
-                                            —
+                                            â€”
                                         @endif
                                     </span>
                                 </div>
@@ -1962,7 +2031,7 @@ new class extends Component
                                             $cell['completed_area'],
                                             2
                                         ) }}
-                                        ha
+                                        {{ $this->dashboardQtyUnitLabel() }}
                                     </span>
                                 </div>
 
@@ -1988,9 +2057,9 @@ new class extends Component
                                                 $cell['used'],
                                                 2
                                             ) }}
-                                            L/ha
+                                            {{ $this->dashboardFuelRateLabel() }}
                                         @else
-                                            —
+                                            â€”
                                         @endif
                                     </span>
                                 </div>
@@ -2043,7 +2112,7 @@ new class extends Component
                                         $totalCell['plan_area'],
                                         2
                                     ) }}
-                                    ha
+                                    {{ $this->dashboardQtyUnitLabel() }}
                                 </span>
                             </div>
 
@@ -2058,9 +2127,9 @@ new class extends Component
                                             $totalCell['requested'],
                                             2
                                         ) }}
-                                        L/ha
+                                        {{ $this->dashboardFuelRateLabel() }}
                                     @else
-                                        —
+                                        â€”
                                     @endif
                                 </span>
                             </div>
@@ -2078,7 +2147,7 @@ new class extends Component
                                         $totalCell['completed_area'],
                                         2
                                     ) }}
-                                    ha
+                                    {{ $this->dashboardQtyUnitLabel() }}
                                 </span>
                             </div>
 
@@ -2104,9 +2173,9 @@ new class extends Component
                                             $totalCell['used'],
                                             2
                                         ) }}
-                                        L/ha
+                                        {{ $this->dashboardFuelRateLabel() }}
                                     @else
-                                        —
+                                        â€”
                                     @endif
                                 </span>
                             </div>

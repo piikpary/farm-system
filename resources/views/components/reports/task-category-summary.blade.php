@@ -88,8 +88,8 @@ new class extends Component
          * Remaining Area          = MAX(Total Area - Finish Area, 0)
          *
          * Request Fuel L/Ha       = Request Fuel / Total Area
-         * Request Fuel            = Sum(Plan Area × Activity Fuel L/Ha)
-         * Plan Use Fuel           = Finish Area × Request Fuel L/Ha
+         * Request Fuel            = Sum(Plan Area Ã— Activity Fuel L/Ha)
+         * Plan Use Fuel           = Finish Area Ã— Request Fuel L/Ha
          *
          * Consumed Fuel L/Ha      = Consumed Fuel / Finish Area
          * Remaining Fuel          = Request Fuel - Consumed Fuel
@@ -1278,7 +1278,7 @@ new class extends Component
                     href="{{ route('language.switch', 'km') }}"
                     class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}"
                 >
-                    ខ្មែរ
+                    ážáŸ’áž˜áŸ‚ážš
                 </a>
             </div>
 

@@ -2,6 +2,8 @@
 
 return [
     'dashboard.view' => 'មើលផ្ទាំងគ្រប់គ្រង',
+    'dashboard.planning.view' => 'មើលផ្ទាំងគ្រប់គ្រងផែនការ',
+    'dashboard.harvesting.view' => 'មើលផ្ទាំងគ្រប់គ្រងការប្រមូលផល',
 
     'stock_fuel.view' => 'មើលស្តុកប្រេង',
     'stock_fuel.create' => 'បន្ថែម / កែតម្រូវស្តុកប្រេង',
@@ -14,6 +16,18 @@ return [
     'work_logs.delete' => 'លុបកំណត់ត្រាការងារ',
     'work_logs.map' => 'មើលផែនទីកំណត់ត្រាការងារ',
     'work_logs.export' => 'នាំចេញកំណត់ត្រាការងារ',
+
+    'work_logs.planning.view' => 'មើលកំណត់ត្រាការងារផែនការ',
+    'work_logs.planning.create' => 'បន្ថែមកំណត់ត្រាការងារផែនការ',
+    'work_logs.planning.edit' => 'កែប្រែកំណត់ត្រាការងារផែនការ',
+    'work_logs.planning.delete' => 'លុបកំណត់ត្រាការងារផែនការ',
+    'work_logs.planning.export' => 'នាំចេញកំណត់ត្រាការងារផែនការ',
+
+    'work_logs.harvesting.view' => 'មើលកំណត់ត្រាការងារប្រមូលផល',
+    'work_logs.harvesting.create' => 'បន្ថែមកំណត់ត្រាការងារប្រមូលផល',
+    'work_logs.harvesting.edit' => 'កែប្រែកំណត់ត្រាការងារប្រមូលផល',
+    'work_logs.harvesting.delete' => 'លុបកំណត់ត្រាការងារប្រមូលផល',
+    'work_logs.harvesting.export' => 'នាំចេញកំណត់ត្រាការងារប្រមូលផល',
 
     'tractors.view' => 'មើលត្រាក់ទ័រ',
     'tractors.create' => 'បន្ថែមត្រាក់ទ័រ',
@@ -56,24 +70,37 @@ return [
     'roles.edit' => 'កែប្រែតួនាទី',
     'roles.delete' => 'លុបតួនាទី',
     'roles.assign_permissions' => 'កំណត់សិទ្ធិឱ្យតួនាទី',
+
     'ai_settings.view' => 'មើលការកំណត់ AI',
     'ai_settings.update' => 'កែប្រែការកំណត់ AI',
+
     'block_registers.view' => 'មើលបញ្ជីប្លុកដាំដុះ',
-'block_registers.create' => 'បង្កើតបញ្ជីប្លុកដាំដុះ',
-'block_registers.edit' => 'កែប្រែបញ្ជីប្លុកដាំដុះ',
-'block_registers.delete' => 'លុបបញ្ជីប្លុកដាំដុះ',
+    'block_registers.create' => 'បង្កើតបញ្ជីប្លុកដាំដុះ',
+    'block_registers.edit' => 'កែប្រែបញ្ជីប្លុកដាំដុះ',
+    'block_registers.delete' => 'លុបបញ្ជីប្លុកដាំដុះ',
 
-'zone_blocks.view' => 'មើលប្លុកតំបន់',
-'zone_blocks.create' => 'បង្កើតប្លុកតំបន់',
-'zone_blocks.edit' => 'កែប្រែប្លុកតំបន់',
-'zone_blocks.delete' => 'លុបប្លុកតំបន់',
+    'zone_blocks.view' => 'មើលប្លុកតំបន់',
+    'zone_blocks.create' => 'បង្កើតប្លុកតំបន់',
+    'zone_blocks.edit' => 'កែប្រែប្លុកតំបន់',
+    'zone_blocks.delete' => 'លុបប្លុកតំបន់',
 
-'planting_cycle_types.view' => 'មើលប្រភេទវដ្តដាំដុះ',
-'planting_cycle_types.create' => 'បង្កើតប្រភេទវដ្តដាំដុះ',
-'planting_cycle_types.edit' => 'កែប្រែប្រភេទវដ្តដាំដុះ',
-'planting_cycle_types.delete' => 'លុបប្រភេទវដ្តដាំដុះ',
-'work_plans.view' => 'មើលផែនការការងារ',
-'work_plans.create' => 'បង្កើតផែនការការងារ',
-'work_plans.edit' => 'កែប្រែផែនការការងារ',
-'work_plans.delete' => 'លុបផែនការការងារ',
+    'planting_cycle_types.view' => 'មើលប្រភេទវដ្តដាំដុះ',
+    'planting_cycle_types.create' => 'បង្កើតប្រភេទវដ្តដាំដុះ',
+    'planting_cycle_types.edit' => 'កែប្រែប្រភេទវដ្តដាំដុះ',
+    'planting_cycle_types.delete' => 'លុបប្រភេទវដ្តដាំដុះ',
+
+    'work_plans.view' => 'មើលផែនការការងារ',
+    'work_plans.create' => 'បង្កើតផែនការការងារ',
+    'work_plans.edit' => 'កែប្រែផែនការការងារ',
+    'work_plans.delete' => 'លុបផែនការការងារ',
+
+    'work_plans.planning.view' => 'មើលផែនការការងារផែនការ',
+    'work_plans.planning.create' => 'បង្កើតផែនការការងារផែនការ',
+    'work_plans.planning.edit' => 'កែប្រែផែនការការងារផែនការ',
+    'work_plans.planning.delete' => 'លុបផែនការការងារផែនការ',
+
+    'work_plans.harvesting.view' => 'មើលផែនការការងារប្រមូលផល',
+    'work_plans.harvesting.create' => 'បង្កើតផែនការការងារប្រមូលផល',
+    'work_plans.harvesting.edit' => 'កែប្រែផែនការការងារប្រមូលផល',
+    'work_plans.harvesting.delete' => 'លុបផែនការការងារប្រមូលផល',
 ];

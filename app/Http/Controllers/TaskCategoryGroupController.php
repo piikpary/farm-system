@@ -18,7 +18,8 @@ class TaskCategoryGroupController extends Controller
 
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('description', 'like', '%' . $search . '%');
+                    ->orWhere('description', 'like', '%' . $search . '%')
+                    ->orWhere('group_type', 'like', '%' . $search . '%');
             });
         }
 
@@ -38,6 +39,10 @@ class TaskCategoryGroupController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'group_type' => [
+                'required',
+                'in:planning,harvesting',
+            ],
             'name' => [
                 'required',
                 'string',
@@ -74,6 +79,10 @@ class TaskCategoryGroupController extends Controller
         TaskCategoryGroup $taskCategoryGroup
     ) {
         $validated = $request->validate([
+            'group_type' => [
+                'required',
+                'in:planning,harvesting',
+            ],
             'name' => [
                 'required',
                 'string',

@@ -4,6 +4,7 @@ use Livewire\Component;
 use App\Models\TaskCategory;
 use App\Models\TaskCategoryGroup;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 new class extends Component
 {
@@ -13,6 +14,7 @@ new class extends Component
     public $editingId = null;
 
     public $editRow = [
+        'group_type' => 'planning',
         'task_category_group_id' => '',
         'name' => '',
         'standard_fuel_per_hectare' => '',
@@ -29,6 +31,7 @@ new class extends Component
     public function emptyRow()
     {
         return [
+            'group_type' => 'planning',
             'task_category_group_id' => '',
             'name' => '',
             'standard_fuel_per_hectare' => '',
@@ -51,11 +54,27 @@ new class extends Component
     public function updatedRows($value, $key)
 {
     $this->resetValidation('rows.' . $key);
+
+    $parts = explode('.', $key);
+    $rowIndex = isset($parts[0]) ? (int) $parts[0] : null;
+    $field = $parts[1] ?? null;
+
+    if (
+        $field === 'group_type' &&
+        $rowIndex !== null &&
+        isset($this->rows[$rowIndex])
+    ) {
+        $this->rows[$rowIndex]['task_category_group_id'] = '';
+    }
 }
 
 public function updatedEditRow($value, $key)
 {
     $this->resetValidation('editRow.' . $key);
+
+    if ($key === 'group_type') {
+        $this->editRow['task_category_group_id'] = '';
+    }
 }
 
 public function saveRow($index)
@@ -69,7 +88,16 @@ public function saveRow($index)
     }
 
     $this->validate([
-        "rows.$index.task_category_group_id" => 'required|exists:task_category_groups,id',
+        "rows.$index.group_type" => 'required|in:planning,harvesting',
+        "rows.$index.task_category_group_id" => [
+            'required',
+            Rule::exists('task_category_groups', 'id')->where(
+                fn ($query) => $query->where(
+                    'group_type',
+                    $this->rows[$index]['group_type'] ?? 'planning'
+                )
+            ),
+        ],
         "rows.$index.name" => 'required|string|max:150',
         "rows.$index.standard_fuel_per_hectare" => 'nullable|numeric|min:0',
         "rows.$index.standard_hectare_per_hour" => 'nullable|numeric|min:0',
@@ -102,11 +130,12 @@ public function saveRow($index)
             abort(403, 'Permission denied.');
         }
 
-        $taskCategory = TaskCategory::findOrFail($id);
+        $taskCategory = TaskCategory::with('group')->findOrFail($id);
 
         $this->editingId = $taskCategory->id;
 
         $this->editRow = [
+            'group_type' => $taskCategory->group?->group_type ?? 'planning',
             'task_category_group_id' => $taskCategory->task_category_group_id,
             'name' => $taskCategory->name,
             'standard_fuel_per_hectare' => $taskCategory->standard_fuel_per_hectare,
@@ -121,6 +150,7 @@ public function saveRow($index)
         $this->editingId = null;
 
         $this->editRow = [
+            'group_type' => 'planning',
             'task_category_group_id' => '',
             'name' => '',
             'standard_fuel_per_hectare' => '',
@@ -139,7 +169,16 @@ public function saveRow($index)
         $taskCategory = TaskCategory::findOrFail($this->editingId);
 
         $this->validate([
-            'editRow.task_category_group_id' => 'required|exists:task_category_groups,id',
+            'editRow.group_type' => 'required|in:planning,harvesting',
+            'editRow.task_category_group_id' => [
+                'required',
+                Rule::exists('task_category_groups', 'id')->where(
+                    fn ($query) => $query->where(
+                        'group_type',
+                        $this->editRow['group_type'] ?? 'planning'
+                    )
+                ),
+            ],
             'editRow.name' => 'required|string|max:150',
             'editRow.standard_fuel_per_hectare' => 'nullable|numeric|min:0',
             'editRow.standard_hectare_per_hour' => 'nullable|numeric|min:0',
@@ -176,8 +215,21 @@ public function saveRow($index)
     public function getTaskCategoryGroupsProperty()
     {
         return TaskCategoryGroup::query()
+            ->orderByRaw("FIELD(group_type, 'planning', 'harvesting')")
             ->orderBy('name')
             ->get();
+    }
+
+    public function groupsForType($type)
+    {
+        return $this->taskCategoryGroups
+            ->where('group_type', $type)
+            ->values();
+    }
+
+    public function typeLabel($type): string
+    {
+        return $type === 'harvesting' ? 'Harvesting' : 'Planning';
     }
 
     public function getTaskCategoriesProperty()
@@ -194,7 +246,12 @@ public function saveRow($index)
                                 'name',
                                 'like',
                                 '%' . $this->search . '%'
-                            );
+                            )
+                                ->orWhere(
+                                    'group_type',
+                                    'like',
+                                    '%' . $this->search . '%'
+                                );
                         });
                 });
             })
@@ -264,7 +321,7 @@ public function saveRow($index)
 
         .master-table {
             width: 100%;
-            min-width: 1320px;
+            min-width: 1450px;
             border-collapse: collapse;
             background: #ffffff;
         }
@@ -422,10 +479,11 @@ public function saveRow($index)
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th>Type *</th>
                         <th>Group *</th>
                         <th>Name *</th>
-                        <th>Fuel / Ha</th>
-                        <th>Ha / Hr</th>
+                        <th>Fuel / Ha/T</th>
+                        <th>Ha/T / Hr</th>
                         <th>Description</th>
                         <th>Status</th>
                         <th width="190">Action</th>
@@ -439,13 +497,24 @@ public function saveRow($index)
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
+                                    <select wire:model.live="editRow.group_type">
+                                        <option value="planning">Planning</option>
+                                        <option value="harvesting">Harvesting</option>
+                                    </select>
+
+                                    @error('editRow.group_type')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
                                     <select
                                         class="group-select"
                                         wire:model.live="editRow.task_category_group_id"
                                     >
                                         <option value="">Select Group</option>
 
-                                        @foreach($this->taskCategoryGroups as $group)
+                                        @foreach($this->groupsForType($editRow['group_type'] ?? 'planning') as $group)
                                             <option value="{{ $group->id }}">
                                                 {{ $group->name }}
                                             </option>
@@ -527,6 +596,10 @@ public function saveRow($index)
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
+                                    {{ $this->typeLabel($taskCategory->group?->group_type ?? 'planning') }}
+                                </td>
+
+                                <td>
                                     {{ $taskCategory->group?->name ?? '-' }}
                                 </td>
 
@@ -573,7 +646,7 @@ public function saveRow($index)
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="8" class="empty">
+                                <td colspan="9" class="empty">
                                     No task category found.
                                 </td>
                             </tr>
@@ -592,13 +665,24 @@ public function saveRow($index)
                             </td>
 
                             <td>
+                                <select wire:model.live="rows.{{ $index }}.group_type">
+                                    <option value="planning">Planning</option>
+                                    <option value="harvesting">Harvesting</option>
+                                </select>
+
+                                @error("rows.$index.group_type")
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
                                 <select
                                     class="group-select"
                                     wire:model.live="rows.{{ $index }}.task_category_group_id"
                                 >
                                     <option value="">Select Group</option>
 
-                                    @foreach($this->taskCategoryGroups as $group)
+                                    @foreach($this->groupsForType($row['group_type'] ?? 'planning') as $group)
                                         <option value="{{ $group->id }}">
                                             {{ $group->name }}
                                         </option>
@@ -697,6 +781,8 @@ public function saveRow($index)
                                 -
                             @endif
                         </td>
+
+                        <td>-</td>
 
                         <td>-</td>
 

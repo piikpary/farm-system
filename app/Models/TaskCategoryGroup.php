@@ -10,6 +10,7 @@ class TaskCategoryGroup extends Model
     use HasFactory;
 
     protected $fillable = [
+        'group_type',
         'name',
         'description',
         'status',

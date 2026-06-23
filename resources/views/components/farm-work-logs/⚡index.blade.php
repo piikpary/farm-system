@@ -26,6 +26,12 @@ new class extends Component
     public $taskCategoryId = '';
     public $workPlanId = '';
     public $perPage = 15;
+    public $workLogType = 'planning';
+    public $filterOpen = false;
+
+    protected $queryString = [
+        'workLogType' => ['except' => 'planning'],
+    ];
 
     public $rows = [];
     public $editingId = null;
@@ -48,6 +54,63 @@ new class extends Component
         'diesel_end' => '',
         'note' => '',
     ];
+
+    public function mount()
+    {
+        if (!in_array($this->workLogType, ['planning', 'harvesting'], true)) {
+            $this->workLogType = 'planning';
+        }
+    }
+    public function toggleFilter()
+{
+    $this->filterOpen = !$this->filterOpen;
+}
+
+    public function updatedWorkLogType()
+    {
+        if (!in_array($this->workLogType, ['planning', 'harvesting'], true)) {
+            $this->workLogType = 'planning';
+        }
+
+        $this->search = '';
+        $this->dateFrom = '';
+        $this->dateTo = '';
+        $this->tractorId = '';
+        $this->driverId = '';
+        $this->zoneId = '';
+        $this->taskCategoryId = '';
+        $this->workPlanId = '';
+        $this->rows = [];
+        $this->cancelEdit();
+    }
+
+    public function workLogTypeLabel(): string
+    {
+        return $this->workLogType === 'harvesting'
+            ? 'Harvesting'
+            : 'Planning';
+    }
+
+    public function workLogQtyLabel(): string
+    {
+        return $this->workLogType === 'harvesting'
+            ? 'Total Tons'
+            : 'Total Area';
+    }
+
+    public function workLogDieselRateLabel(): string
+    {
+        return $this->workLogType === 'harvesting'
+            ? 'L/T'
+            : 'L/Ha';
+    }
+
+    public function workLogProductivityLabel(): string
+    {
+        return $this->workLogType === 'harvesting'
+            ? 'T/Hr'
+            : 'Ha/Hr';
+    }
 
     public function addRow()
     {
@@ -992,6 +1055,15 @@ new class extends Component
                 'zoneBlock.zone',
                 'taskCategory',
             ])
+            ->where(function ($query) {
+                $query
+                    ->whereHas('workPlan.activities.taskCategory.group', function ($groupQuery) {
+                        $groupQuery->where('group_type', $this->workLogType);
+                    })
+                    ->orWhereHas('workPlan.taskCategory.group', function ($groupQuery) {
+                        $groupQuery->where('group_type', $this->workLogType);
+                    });
+            })
             ->when(
                 trim((string) $this->search) !== '',
                 function ($query) {
@@ -1215,13 +1287,13 @@ new class extends Component
             'G1' => 'Tractor',
             'H1' => 'Driver',
             'I1' => 'Hour',
-            'J1' => 'Total Area',
+            'J1' => $this->workLogQtyLabel(),
             'K1' => 'Diesel Start',
             'L1' => 'Diesel Refill',
             'M1' => 'Diesel End',
             'N1' => 'Diesel Used',
-            'O1' => 'L/Ha',
-            'P1' => 'Ha/Hr',
+            'O1' => $this->workLogDieselRateLabel(),
+            'P1' => $this->workLogProductivityLabel(),
             'Q1' => 'Note',
         ];
 
@@ -1513,6 +1585,15 @@ new class extends Component
                     'status',
                     ['in_progress', 'complete']
                 )
+                ->where(function ($query) {
+                    $query
+                        ->whereHas('activities.taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->workLogType);
+                        })
+                        ->orWhereHas('taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->workLogType);
+                        });
+                })
                 ->latest('plan_date')
                 ->latest('id')
                 ->get(),
@@ -1521,6 +1602,15 @@ new class extends Component
                     'taskCategory.group',
                     'activities.taskCategory.group',
                 ])
+                ->where(function ($query) {
+                    $query
+                        ->whereHas('activities.taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->workLogType);
+                        })
+                        ->orWhereHas('taskCategory.group', function ($groupQuery) {
+                            $groupQuery->where('group_type', $this->workLogType);
+                        });
+                })
                 ->latest('plan_date')
                 ->latest('id')
                 ->get(),
@@ -1542,10 +1632,14 @@ new class extends Component
                 ->orderBy('block_code')
                 ->get(),
 
-            'taskCategories' => TaskCategory::where(
+            'taskCategories' => TaskCategory::with('group')
+                ->where(
                     'status',
                     'active'
                 )
+                ->whereHas('group', function ($query) {
+                    $query->where('group_type', $this->workLogType);
+                })
                 ->orderBy('name')
                 ->get(),
         ];
@@ -1560,8 +1654,63 @@ new class extends Component
 
     <style>
     .filter-panel {
-        margin-bottom: 18px;
-    }
+    margin-bottom: 18px;
+    overflow: hidden;
+    padding: 0 18px !important;
+}
+
+.filter-toggle-header {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    user-select: none;
+    padding: 0;
+}
+
+.filter-toggle-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #2563eb;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.filter-toggle-title svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    color: #2563eb;
+}
+
+.filter-body {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(-6px);
+    transition:
+        max-height 0.35s ease,
+        opacity 0.25s ease,
+        transform 0.25s ease,
+        padding-top 0.25s ease,
+        padding-bottom 0.25s ease,
+        margin-top 0.25s ease;
+}
+
+.filter-panel.is-open .filter-body {
+    max-height: 520px;
+    opacity: 1;
+    margin-top: 8px;
+    padding-top: 14px;
+    padding-bottom: 18px;
+    border-top: 1px solid #e5e7eb;
+    transform: translateY(0);
+}
 
     .filter-grid {
         display: grid;
@@ -1898,7 +2047,7 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">
-                {{ __('pages.farm_work_logs') }}
+                {{ $this->workLogTypeLabel() }} Work Logs
             </h1>
 
             <p class="page-subtitle">
@@ -1931,9 +2080,25 @@ new class extends Component
         </div>
     </div>
 
-    <div class="panel filter-panel">
-        <h2 class="panel-title">Filter</h2>
+    <div class="panel filter-panel {{ $filterOpen ? 'is-open' : '' }}">
+    <button
+        type="button"
+        class="filter-toggle-header"
+        wire:click="toggleFilter"
+    >
+        <span class="filter-toggle-title">
+            <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+            >
+                <path d="M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 .8 1.6L14 14.67V20a1 1 0 0 1-1.45.89l-4-2A1 1 0 0 1 8 18v-3.33L3.2 5.6A1 1 0 0 1 3 5Z" />
+            </svg>
+            <span>Filters</span>
+        </span>
+    </button>
 
+    <div class="filter-body">
         <div class="filter-grid">
             <div>
                 <label>Search</label>
@@ -2056,6 +2221,7 @@ new class extends Component
             </button>
         </div>
     </div>
+</div>
 
     <div class="panel">
         <div class="list-header">
@@ -2095,13 +2261,13 @@ new class extends Component
                         <th>Tractor</th>
                         <th>Driver</th>
                         <th>Hour</th>
-                        <th>Total Area</th>
+                        <th>{{ $this->workLogQtyLabel() }}</th>
                         <th>Diesel Start</th>
                         <th>Diesel Refill</th>
                         <th>Diesel End</th>
                         <th>Diesel Used</th>
-                        <th>L/Ha</th>
-                        <th>Ha/Hr</th>
+                        <th>{{ $this->workLogDieselRateLabel() }}</th>
+                        <th>{{ $this->workLogProductivityLabel() }}</th>
                         <th>Action</th>
                     </tr>
                 </thead>

@@ -41,7 +41,7 @@
 
             .master-table {
                 width: 100%;
-                min-width: 950px;
+                min-width: 1050px;
                 border-collapse: collapse;
                 background: #ffffff;
             }
@@ -231,7 +231,7 @@
                         name="search"
                         id="groupSearchInput"
                         value="{{ request('search') }}"
-                        placeholder="Filter name, description, status"
+                        placeholder="Filter name, description, type, status"
                         autocomplete="off"
                     >
                 </form>
@@ -271,6 +271,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>Type *</th>
                             <th>Name *</th>
                             <th>Description</th>
                             <th>Task</th>
@@ -284,6 +285,33 @@
                             <tr id="groupRow{{ $group->id }}">
                                 <td class="row-no">
                                     {{ $groups->firstItem() + $loop->index }}
+                                </td>
+
+                                <td>
+                                    <span class="group-display-{{ $group->id }}">
+                                        {{ ucfirst($group->group_type ?? 'planning') }}
+                                    </span>
+
+                                    <select
+                                        name="group_type"
+                                        form="updateGroupForm{{ $group->id }}"
+                                        class="group-edit-{{ $group->id }} hidden-row"
+                                        required
+                                    >
+                                        <option
+                                            value="planning"
+                                            @selected(($group->group_type ?? 'planning') === 'planning')
+                                        >
+                                            Planning
+                                        </option>
+
+                                        <option
+                                            value="harvesting"
+                                            @selected(($group->group_type ?? 'planning') === 'harvesting')
+                                        >
+                                            Harvesting
+                                        </option>
+                                    </select>
                                 </td>
 
                                 <td>
@@ -398,7 +426,7 @@
                         @empty
                             @if(!$errors->any())
                                 <tr id="emptyGroupRow">
-                                    <td colspan="6" class="empty">
+                                    <td colspan="7" class="empty">
                                         No task category groups found.
                                     </td>
                                 </tr>
@@ -418,6 +446,32 @@
                                 >
                                     ×
                                 </button>
+                            </td>
+
+                            <td>
+                                <select
+                                    name="group_type"
+                                    form="createGroupForm"
+                                    required
+                                >
+                                    <option
+                                        value="planning"
+                                        @selected(old('group_type', 'planning') === 'planning')
+                                    >
+                                        Planning
+                                    </option>
+
+                                    <option
+                                        value="harvesting"
+                                        @selected(old('group_type') === 'harvesting')
+                                    >
+                                        Harvesting
+                                    </option>
+                                </select>
+
+                                @error('group_type')
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
                             </td>
 
                             <td>
@@ -518,6 +572,8 @@
                                     -
                                 @endif
                             </td>
+
+                            <td>-</td>
 
                             <td class="total-label">
                                 Total: {{ number_format((int) $groups->total()) }}

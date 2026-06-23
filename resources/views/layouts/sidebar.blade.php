@@ -161,6 +161,65 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.work-plan-submenu {
+    margin: 2px 10px 2px 14px;
+}
+
+.work-plan-submenu summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.work-plan-submenu summary::-webkit-details-marker {
+    display: none;
+}
+
+.work-plan-submenu-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px 12px 16px;
+    border-radius: 12px;
+    color: #cbd5e1;
+    font-size: 14px;
+    font-weight: 900;
+    transition: 0.2s ease;
+}
+
+.work-plan-submenu-title > span:first-child {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.work-plan-submenu-title:hover,
+.work-plan-submenu.active .work-plan-submenu-title {
+    background: #15803d;
+    color: #ffffff;
+}
+
+.work-plan-submenu-arrow {
+    font-size: 11px;
+    transition: 0.2s ease;
+}
+
+.work-plan-submenu[open] .work-plan-submenu-arrow {
+    transform: rotate(180deg);
+}
+
+.work-plan-submenu-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0 6px 22px;
+}
+
+.work-plan-submenu-body .farm-menu-link {
+    margin: 2px 0;
+    padding-left: 14px;
+}
 </style>
 
 <aside id="farmSidebar" class="farm-sidebar">
@@ -214,22 +273,96 @@
                     @endif
 
                     @if($showWorkPlans && $user->hasPermission('work_plans.view'))
-                        <a href="{{ route('farm-work-plans.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-plans.*') ? 'active' : '' }}"
-                           title="{{ __('sidebar.work_plans') }}">
-                            <span class="farm-menu-icon">🗓️</span>
-                            <span>{{ __('sidebar.work_plans') }}</span>
-                        </a>
-                    @endif
+    @php
+        $activeWorkPlanType = request('workPlanType', 'planning');
+
+        $planningActive = request()->routeIs('farm-work-plans.*')
+            && $activeWorkPlanType === 'planning';
+
+        $harvestingActive = request()->routeIs('farm-work-plans.*')
+            && $activeWorkPlanType === 'harvesting';
+
+        $workPlansOpen = request()->routeIs('farm-work-plans.*');
+    @endphp
+
+    <details
+        class="work-plan-submenu {{ $workPlansOpen ? 'active' : '' }}"
+        {{ $workPlansOpen ? 'open' : '' }}
+    >
+        <summary>
+            <div class="work-plan-submenu-title">
+                <span>
+                    <span class="farm-menu-icon">🗓️</span>
+                    <span>{{ __('sidebar.work_plans') }}</span>
+                </span>
+
+                <span class="work-plan-submenu-arrow">▼</span>
+            </div>
+        </summary>
+
+        <div class="work-plan-submenu-body">
+            <a href="{{ route('farm-work-plans.index', ['workPlanType' => 'planning']) }}"
+               class="farm-menu-link {{ $planningActive ? 'active' : '' }}"
+               title="Planning Work Plans">
+                <span class="farm-menu-icon">🌱</span>
+                <span>Planning</span>
+            </a>
+
+            <a href="{{ route('farm-work-plans.index', ['workPlanType' => 'harvesting']) }}"
+               class="farm-menu-link {{ $harvestingActive ? 'active' : '' }}"
+               title="Harvesting Work Plans">
+                <span class="farm-menu-icon">🌾</span>
+                <span>Harvesting</span>
+            </a>
+        </div>
+    </details>
+@endif
 
                     @if($user->hasPermission('work_logs.view'))
-                        <a href="{{ route('farm-work-logs.index') }}"
-                           class="farm-menu-link {{ request()->routeIs('farm-work-logs.*') ? 'active' : '' }}"
-                           title="{{ __('sidebar.work_logs') }}">
-                            <span class="farm-menu-icon">📝</span>
-                            <span>{{ __('sidebar.work_logs') }}</span>
-                        </a>
-                    @endif
+    @php
+        $activeWorkLogType = request('workLogType', 'planning');
+
+        $planningWorkLogActive = request()->routeIs('farm-work-logs.*')
+            && $activeWorkLogType === 'planning';
+
+        $harvestingWorkLogActive = request()->routeIs('farm-work-logs.*')
+            && $activeWorkLogType === 'harvesting';
+
+        $workLogsOpen = request()->routeIs('farm-work-logs.*');
+    @endphp
+
+    <details
+        class="work-plan-submenu {{ $workLogsOpen ? 'active' : '' }}"
+        {{ $workLogsOpen ? 'open' : '' }}
+    >
+        <summary>
+            <div class="work-plan-submenu-title">
+                <span>
+                    <span class="farm-menu-icon">📝</span>
+                    <span>{{ __('sidebar.work_logs') }}</span>
+                </span>
+
+                <span class="work-plan-submenu-arrow">▼</span>
+            </div>
+        </summary>
+
+        <div class="work-plan-submenu-body">
+            <a href="{{ route('farm-work-logs.index', ['workLogType' => 'planning']) }}"
+               class="farm-menu-link {{ $planningWorkLogActive ? 'active' : '' }}"
+               title="Planning Work Logs">
+                <span class="farm-menu-icon">🌱</span>
+                <span>Planning</span>
+            </a>
+
+            <a href="{{ route('farm-work-logs.index', ['workLogType' => 'harvesting']) }}"
+               class="farm-menu-link {{ $harvestingWorkLogActive ? 'active' : '' }}"
+               title="Harvesting Work Logs">
+                <span class="farm-menu-icon">🌾</span>
+                <span>Harvesting</span>
+            </a>
+        </div>
+    </details>
+@endif
 
                     @if($showBlockRegisters && $user->hasPermission('block_registers.view'))
                         <a href="{{ route('block-registers.index') }}"
