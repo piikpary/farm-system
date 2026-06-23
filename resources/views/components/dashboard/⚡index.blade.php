@@ -1807,15 +1807,6 @@ new class extends Component
 
             <label class="fod-control">
 
-                <input
-                    type="date"
-                    wire:model.live="dashboardDate"
-                    aria-label="Dashboard date"
-                >
-            </label>
-
-            <label class="fod-control">
-
                 <select
                     wire:model.live="selectedZone"
                     aria-label="Filter unit"
@@ -1829,15 +1820,15 @@ new class extends Component
                     @endforeach
                 </select>
             </label>
+            <label class="fod-control">
 
-            <a
-                href="{{ route('farm-work-logs.create', ['workLogType' => $this->dashboardType]) }}"
-                class="fod-add-button"
-            >
-               
+                <input
+                    type="date"
+                    wire:model.live="dashboardDate"
+                    aria-label="Dashboard date"
+                >
+            </label>
 
-                Add Work Log
-            </a>
         </div>
     </div>
 
