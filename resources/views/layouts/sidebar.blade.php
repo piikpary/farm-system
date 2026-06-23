@@ -305,7 +305,7 @@
                class="farm-menu-link {{ $planningActive ? 'active' : '' }}"
                title="Planning Work Plans">
                 <span class="farm-menu-icon">🌱</span>
-                <span>Planning</span>
+                <span>Planting</span>
             </a>
 
             <a href="{{ route('farm-work-plans.index', ['workPlanType' => 'harvesting']) }}"
@@ -351,7 +351,7 @@
                class="farm-menu-link {{ $planningWorkLogActive ? 'active' : '' }}"
                title="Planning Work Logs">
                 <span class="farm-menu-icon">🌱</span>
-                <span>Planning</span>
+                <span>Planting</span>
             </a>
 
             <a href="{{ route('farm-work-logs.index', ['workLogType' => 'harvesting']) }}"

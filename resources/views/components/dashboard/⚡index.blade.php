@@ -68,7 +68,7 @@ new class extends Component
     {
         return $this->dashboardType === 'harvesting'
             ? 'Harvesting'
-            : 'Planning';
+            : 'Planting';
     }
 
     public function dashboardQtyUnitLabel(): string
@@ -1751,7 +1751,7 @@ new class extends Component
                     wire:model.live="dashboardType"
                     aria-label="Dashboard type"
                 >
-                    <option value="planning">Planning</option>
+                    <option value="planning">Planting</option>
                     <option value="harvesting">Harvesting</option>
                 </select>
             </label>

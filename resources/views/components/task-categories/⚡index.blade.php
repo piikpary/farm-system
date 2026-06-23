@@ -229,7 +229,7 @@ public function saveRow($index)
 
     public function typeLabel($type): string
     {
-        return $type === 'harvesting' ? 'Harvesting' : 'Planning';
+        return $type === 'harvesting' ? 'Harvesting' : 'Planting';
     }
 
     public function getTaskCategoriesProperty()
@@ -498,7 +498,7 @@ public function saveRow($index)
 
                                 <td>
                                     <select wire:model.live="editRow.group_type">
-                                        <option value="planning">Planning</option>
+                                        <option value="planning">Planting</option>
                                         <option value="harvesting">Harvesting</option>
                                     </select>
 
@@ -666,7 +666,7 @@ public function saveRow($index)
 
                             <td>
                                 <select wire:model.live="rows.{{ $index }}.group_type">
-                                    <option value="planning">Planning</option>
+                                    <option value="planning">Planting</option>
                                     <option value="harvesting">Harvesting</option>
                                 </select>
 

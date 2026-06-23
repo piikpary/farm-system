@@ -97,7 +97,7 @@ new class extends Component
     {
         return $this->workPlanType === 'harvesting'
             ? 'Harvesting'
-            : 'Planning';
+            : 'Planting';
     }
 
     public function workPlanQtyLabel(): string

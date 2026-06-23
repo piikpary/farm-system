@@ -289,7 +289,7 @@
 
                                 <td>
                                     <span class="group-display-{{ $group->id }}">
-                                        {{ ucfirst($group->group_type ?? 'planning') }}
+                                        {{ ($group->group_type ?? 'planning') === 'harvesting' ? 'Harvesting' : 'Planting' }}
                                     </span>
 
                                     <select
@@ -302,7 +302,7 @@
                                             value="planning"
                                             @selected(($group->group_type ?? 'planning') === 'planning')
                                         >
-                                            Planning
+                                            Planting
                                         </option>
 
                                         <option
@@ -458,7 +458,7 @@
                                         value="planning"
                                         @selected(old('group_type', 'planning') === 'planning')
                                     >
-                                        Planning
+                                        Planting
                                     </option>
 
                                     <option

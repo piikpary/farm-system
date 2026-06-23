@@ -88,7 +88,7 @@ new class extends Component
     {
         return $this->workLogType === 'harvesting'
             ? 'Harvesting'
-            : 'Planning';
+            : 'Planting';
     }
 
     public function workLogQtyLabel(): string
