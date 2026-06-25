@@ -16,6 +16,90 @@ new class extends Component
     public $zone_id;
     public $zone_block_id;
     public $activity_id;
+    public $report_type = 'planning';
+
+    protected $queryString = [
+        'report_type' => ['except' => 'planning'],
+    ];
+
+    public function mount()
+    {
+        if (!in_array($this->report_type, ['planning', 'harvesting'], true)) {
+            $this->report_type = 'planning';
+        }
+    }
+
+    public function updatedReportType($value)
+    {
+        if (!in_array($value, ['planning', 'harvesting'], true)) {
+            $this->report_type = 'planning';
+        }
+
+        $this->activity_id = null;
+    }
+
+    public function reportTypeLabel(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Harvesting'
+            : 'Planting';
+    }
+
+    public function totalQtyHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Total Tons'
+            : __('pages.total_area_hec');
+    }
+
+    public function finishQtyHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Finish Tons'
+            : __('pages.finish_area_hec');
+    }
+
+    public function remainingQtyHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Remaining Tons'
+            : __('pages.remaining_area_hec');
+    }
+
+    public function requestFuelRateHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Request Fuel (L/T)'
+            : __('pages.request_fuel_l_hec');
+    }
+
+    public function consumedFuelRateHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Consumed Fuel (L/T)'
+            : __('pages.consumed_fuel_l_hec');
+    }
+
+    public function remainingFuelRateHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Remaining Fuel (L/T)'
+            : __('pages.remaining_fuel_l_hec');
+    }
+
+    public function varianceFuelRateHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Variance Fuel (L/T)'
+            : __('pages.variance_fuel_l_hec');
+    }
+
+    public function workingEfficiencyHeader(): string
+    {
+        return $this->report_type === 'harvesting'
+            ? 'Total Working Hour (T/Hr)'
+            : __('pages.total_working_hour_hec_hr');
+    }
 
     public function updatedZoneId()
     {
@@ -112,8 +196,8 @@ new class extends Component
          * fuel-per-hectare value.
          */
         $plansQuery = FarmWorkPlan::with([
-            'taskCategory',
-            'activities.taskCategory',
+            'taskCategory.group',
+            'activities.taskCategory.group',
         ])
             ->when(
                 $this->from_date,
@@ -147,6 +231,23 @@ new class extends Component
                             }
                         );
                 });
+            })
+            ->where(function ($typeQuery) {
+                $typeQuery
+                    ->whereHas(
+                        'activities.taskCategory.group',
+                        fn ($groupQuery) => $groupQuery->where(
+                            'group_type',
+                            $this->report_type
+                        )
+                    )
+                    ->orWhereHas(
+                        'taskCategory.group',
+                        fn ($groupQuery) => $groupQuery->where(
+                            'group_type',
+                            $this->report_type
+                        )
+                    );
             });
 
         $this->applyPlanZoneBlockFilter(
@@ -165,6 +266,13 @@ new class extends Component
                         (int) $activity->task_category_id;
 
                     if (!$taskCategoryId) {
+                        continue;
+                    }
+
+                    if (
+                        ($activity->taskCategory?->group?->group_type ?? 'planning')
+                        !== $this->report_type
+                    ) {
                         continue;
                     }
 
@@ -215,6 +323,13 @@ new class extends Component
                     (int) $plan->task_category_id;
 
                 if (
+                    ($plan->taskCategory?->group?->group_type ?? 'planning')
+                    !== $this->report_type
+                ) {
+                    continue;
+                }
+
+                if (
                     $this->activity_id &&
                     $taskCategoryId !== (int) $this->activity_id
                 ) {
@@ -247,7 +362,7 @@ new class extends Component
             }
         }
 
-        $logs = FarmWorkLog::with('taskCategory')
+        $logs = FarmWorkLog::with('taskCategory.group')
             ->when(
                 $this->from_date,
                 fn ($q) => $q->whereDate(
@@ -284,6 +399,13 @@ new class extends Component
                 fn ($q) => $q->where(
                     'task_category_id',
                     (int) $this->activity_id
+                )
+            )
+            ->whereHas(
+                'taskCategory.group',
+                fn ($groupQuery) => $groupQuery->where(
+                    'group_type',
+                    $this->report_type
                 )
             )
             ->get();
@@ -472,22 +594,22 @@ new class extends Component
         $headers = [
             'A1' => __('pages.no'),
             'B1' => __('pages.task_category'),
-            'C1' => __('pages.total_area_hec'),
-            'D1' => __('pages.finish_area_hec'),
-            'E1' => __('pages.remaining_area_hec'),
-            'F1' => __('pages.request_fuel_l_hec'),
+            'C1' => $this->totalQtyHeader(),
+            'D1' => $this->finishQtyHeader(),
+            'E1' => $this->remainingQtyHeader(),
+            'F1' => $this->requestFuelRateHeader(),
             'G1' => __('pages.request_fuel_l'),
             'H1' => trans()->has('pages.plan_use_fuel_l')
                 ? __('pages.plan_use_fuel_l')
                 : 'Plan Use Fuel (L)',
             'I1' => __('pages.consumed_fuel_l'),
-            'J1' => __('pages.consumed_fuel_l_hec'),
+            'J1' => $this->consumedFuelRateHeader(),
             'K1' => __('pages.remaining_fuel_l'),
-            'L1' => __('pages.remaining_fuel_l_hec'),
+            'L1' => $this->remainingFuelRateHeader(),
             'M1' => __('pages.variance_fuel_l'),
-            'N1' => __('pages.variance_fuel_l_hec'),
+            'N1' => $this->varianceFuelRateHeader(),
             'O1' => __('pages.total_working_hour_hr'),
-            'P1' => __('pages.total_working_hour_hec_hr'),
+            'P1' => $this->workingEfficiencyHeader(),
         ];
 
         foreach ($headers as $cell => $value) {
@@ -869,20 +991,20 @@ new class extends Component
                     [
                         'No',
                         'Task Category',
-                        'Total Area (Hec)',
-                        'Finish Area (Hec)',
-                        'Remaining Area (Hec)',
-                        'Request Fuel (L/Hec)',
+                        $this->totalQtyHeader(),
+                        $this->finishQtyHeader(),
+                        $this->remainingQtyHeader(),
+                        $this->requestFuelRateHeader(),
                         'Request Fuel (L)',
                         'Plan Use Fuel (L)',
                         'Consumed Fuel (L)',
-                        'Consumed Fuel (L/Hec)',
+                        $this->consumedFuelRateHeader(),
                         'Remaining Fuel (L)',
-                        'Remaining Fuel (L/Hec)',
+                        $this->remainingFuelRateHeader(),
                         'Variance Fuel (L)',
-                        'Variance Fuel (L/Hec)',
+                        $this->varianceFuelRateHeader(),
                         'Total Working Hour (Hr)',
-                        'Hectare/Hour',
+                        $this->workingEfficiencyHeader(),
                     ]
                 );
 
@@ -944,6 +1066,9 @@ new class extends Component
             : collect(),
 
         'activities' => TaskCategory::query()
+            ->whereHas('group', function ($query) {
+                $query->where('group_type', $this->report_type);
+            })
             ->orderBy('name')
             ->get([
                 'id',
@@ -1266,22 +1391,6 @@ new class extends Component
         </div>
 
         <div class="page-actions">
-            <div class="language-switcher">
-                <a
-                    href="{{ route('language.switch', 'en') }}"
-                    class="lang-btn {{ app()->getLocale() === 'en' ? 'active' : '' }}"
-                >
-                    EN
-                </a>
-
-                <a
-                    href="{{ route('language.switch', 'km') }}"
-                    class="lang-btn {{ app()->getLocale() === 'km' ? 'active' : '' }}"
-                >
-                    ážáŸ’áž˜áŸ‚ážš
-                </a>
-            </div>
-
             <a
                 href="{{ route('dashboard') }}"
                 class="btn gray"
@@ -1296,6 +1405,22 @@ new class extends Component
             class="form-grid"
             style="align-items: end;"
         >
+            <div>
+                <label>
+                    Report Type
+                </label>
+
+                <select wire:model.live="report_type">
+                    <option value="planning">
+                        Planting
+                    </option>
+
+                    <option value="harvesting">
+                        Harvesting
+                    </option>
+                </select>
+            </div>
+
             <div>
                 <label>
                     {{ __('pages.from_date') }}
@@ -1456,19 +1581,19 @@ new class extends Component
                         </th>
 
                         <th>
-                            {{ __('pages.total_area_hec') }}
+                            {{ $this->totalQtyHeader() }}
                         </th>
 
                         <th>
-                            {{ __('pages.finish_area_hec') }}
+                            {{ $this->finishQtyHeader() }}
                         </th>
 
                         <th>
-                            {{ __('pages.remaining_area_hec') }}
+                            {{ $this->remainingQtyHeader() }}
                         </th>
 
                         <th>
-                            {{ __('pages.request_fuel_l_hec') }}
+                            {{ $this->requestFuelRateHeader() }}
                         </th>
 
                         <th>
@@ -1486,7 +1611,7 @@ new class extends Component
                         </th>
 
                         <th>
-                            {{ __('pages.consumed_fuel_l_hec') }}
+                            {{ $this->consumedFuelRateHeader() }}
                         </th>
 
                         <th>
@@ -1494,7 +1619,7 @@ new class extends Component
                         </th>
 
                         <th>
-                            {{ __('pages.remaining_fuel_l_hec') }}
+                            {{ $this->remainingFuelRateHeader() }}
                         </th>
 
                         <th>
@@ -1502,7 +1627,7 @@ new class extends Component
                         </th>
 
                         <th>
-                            {{ __('pages.variance_fuel_l_hec') }}
+                            {{ $this->varianceFuelRateHeader() }}
                         </th>
 
                         <th>
@@ -1510,7 +1635,7 @@ new class extends Component
                         </th>
 
                         <th>
-                            {{ __('pages.total_working_hour_hec_hr') }}
+                            {{ $this->workingEfficiencyHeader() }}
                         </th>
                     </tr>
                 </thead>
