@@ -1,12 +1,16 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Driver;
 use Illuminate\Support\Facades\Auth;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
     public $editingId = null;
 
@@ -17,6 +21,11 @@ new class extends Component
         'address' => '',
         'status' => 'active',
     ];
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -166,12 +175,22 @@ new class extends Component
                 });
             })
             ->orderBy('name')
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalDriversProperty()
     {
-        return $this->drivers->count();
+        return Driver::query()
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->where('name', 'like', '%' . $this->search . '%')
+                        ->orWhere('phone', 'like', '%' . $this->search . '%')
+                        ->orWhere('id_card_no', 'like', '%' . $this->search . '%')
+                        ->orWhere('address', 'like', '%' . $this->search . '%')
+                        ->orWhere('status', 'like', '%' . $this->search . '%');
+                });
+            })
+            ->count();
     }
 };
 
@@ -277,7 +296,7 @@ new class extends Component
                     @forelse($this->drivers as $driver)
                         @if($editingId === $driver->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->drivers->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <input type="text" wire:model.live="editRow.name">
@@ -316,7 +335,7 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->drivers->firstItem() + $loop->index }}</td>
                                 <td>{{ $driver->name }}</td>
                                 <td>{{ $driver->phone ?? '-' }}</td>
                                 <td>{{ $driver->id_card_no ?? '-' }}</td>
@@ -403,6 +422,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->drivers->links() }}
         </div>
     </div>
 </div>

@@ -1,13 +1,17 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Tractor;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
     public $editingId = null;
 
@@ -19,6 +23,11 @@ new class extends Component
         'fuel_capacity' => '',
         'status' => 'active',
     ];
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -186,14 +195,22 @@ new class extends Component
                 });
             })
             ->orderBy('tractor_no')
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalFuelCapacityProperty()
     {
-        return $this->tractors->sum(function ($tractor) {
-            return (float) ($tractor->fuel_capacity ?? 0);
-        });
+        return Tractor::query()
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->where('tractor_no', 'like', '%' . $this->search . '%')
+                        ->orWhere('name', 'like', '%' . $this->search . '%')
+                        ->orWhere('model', 'like', '%' . $this->search . '%')
+                        ->orWhere('plate_no', 'like', '%' . $this->search . '%')
+                        ->orWhere('status', 'like', '%' . $this->search . '%');
+                });
+            })
+            ->sum('fuel_capacity');
     }
 };
 
@@ -260,7 +277,6 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.tractors') }}</h1>
-            
         </div>
 
         <div class="page-actions">
@@ -299,7 +315,7 @@ new class extends Component
                     @forelse($this->tractors as $tractor)
                         @if($editingId === $tractor->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->tractors->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <input type="text" wire:model.live="editRow.tractor_no">
@@ -343,7 +359,7 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->tractors->firstItem() + $loop->index }}</td>
                                 <td>{{ $tractor->tractor_no }}</td>
                                 <td>{{ $tractor->name ?? '-' }}</td>
                                 <td>{{ $tractor->model ?? '-' }}</td>
@@ -437,6 +453,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->tractors->links() }}
         </div>
     </div>
 </div>

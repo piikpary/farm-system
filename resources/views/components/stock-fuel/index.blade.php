@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\FuelStock;
 use App\Models\FuelTransaction;
 use Illuminate\Support\Facades\Auth;
@@ -8,7 +9,10 @@ use Illuminate\Support\Facades\DB;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
 
     public $editingId = null;
@@ -21,6 +25,11 @@ new class extends Component
         'total_stock_out' => '',
         'status' => 'active',
     ];
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -248,7 +257,7 @@ new class extends Component
                 });
             })
             ->latest()
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalOpeningStockProperty()
@@ -270,13 +279,14 @@ new class extends Component
     {
         return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->total_stock_out ?? 0));
     }
+
     public function getTotalStockValueProperty()
-{
-    return $this->fuelStocks->sum(function ($stock) {
-        return (float) ($stock->current_stock ?? 0)
-            * (float) ($stock->purchase_price ?? 0);
-    });
-}
+    {
+        return $this->fuelStocks->sum(function ($stock) {
+            return (float) ($stock->current_stock ?? 0)
+                * (float) ($stock->purchase_price ?? 0);
+        });
+    }
 };
 
 ?>
@@ -442,7 +452,7 @@ new class extends Component
                     @forelse($this->fuelStocks as $stock)
                         @if($editingId === $stock->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <input type="number"
@@ -498,7 +508,7 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
 
                                 <td class="green-number">
                                     {{ number_format((float) $stock->current_stock, 2) }} L
@@ -639,6 +649,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->fuelStocks->links() }}
         </div>
     </div>
 </div>

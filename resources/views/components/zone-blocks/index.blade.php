@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Zone;
 use App\Models\ZoneBlock;
 use Illuminate\Support\Facades\Auth;
@@ -8,7 +9,10 @@ use Illuminate\Validation\Rule;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
 
     public $editingId = null;
@@ -27,6 +31,11 @@ new class extends Component
 
     public $mapTarget = null;
     public $mapIndex = null;
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -272,14 +281,25 @@ new class extends Component
                 });
             })
             ->orderBy('block_code')
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalAreaProperty()
     {
-        return $this->blocks->sum(function ($block) {
-            return (float) ($block->area ?? 0);
-        });
+        return ZoneBlock::query()
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->where('block_code', 'like', '%' . $this->search . '%')
+                        ->orWhere('name', 'like', '%' . $this->search . '%')
+                        ->orWhere('location_note', 'like', '%' . $this->search . '%')
+                        ->orWhere('status', 'like', '%' . $this->search . '%')
+                        ->orWhereHas('zone', function ($zoneQuery) {
+                            $zoneQuery->where('zone_code', 'like', '%' . $this->search . '%')
+                                ->orWhere('name', 'like', '%' . $this->search . '%');
+                        });
+                });
+            })
+            ->sum('area');
     }
 
     public function with()
@@ -528,7 +548,6 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ __('pages.zone_blocks') }}</h1>
-            
         </div>
 
         <div class="page-actions">
@@ -567,7 +586,7 @@ new class extends Component
                     @forelse($this->blocks as $block)
                         @if($editingId === $block->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->blocks->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <select wire:model.live="editRow.zone_id">
@@ -641,7 +660,7 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->blocks->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     {{ $block->zone->zone_code ?? '-' }}
@@ -823,6 +842,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->blocks->links() }}
         </div>
     </div>
 

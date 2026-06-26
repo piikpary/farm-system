@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\TaskCategory;
 use App\Models\TaskCategoryGroup;
 use Illuminate\Support\Facades\Auth;
@@ -8,7 +9,10 @@ use Illuminate\Validation\Rule;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
 
     public $editingId = null;
@@ -22,6 +26,11 @@ new class extends Component
         'description' => '',
         'status' => 'active',
     ];
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -52,77 +61,77 @@ new class extends Component
     }
 
     public function updatedRows($value, $key)
-{
-    $this->resetValidation('rows.' . $key);
+    {
+        $this->resetValidation('rows.' . $key);
 
-    $parts = explode('.', $key);
-    $rowIndex = isset($parts[0]) ? (int) $parts[0] : null;
-    $field = $parts[1] ?? null;
+        $parts = explode('.', $key);
+        $rowIndex = isset($parts[0]) ? (int) $parts[0] : null;
+        $field = $parts[1] ?? null;
 
-    if (
-        $field === 'group_type' &&
-        $rowIndex !== null &&
-        isset($this->rows[$rowIndex])
-    ) {
-        $this->rows[$rowIndex]['task_category_group_id'] = '';
-    }
-}
-
-public function updatedEditRow($value, $key)
-{
-    $this->resetValidation('editRow.' . $key);
-
-    if ($key === 'group_type') {
-        $this->editRow['task_category_group_id'] = '';
-    }
-}
-
-public function saveRow($index)
-{
-    if (!auth()->user()->hasPermission('task_categories.create')) {
-        abort(403, 'Permission denied.');
+        if (
+            $field === 'group_type' &&
+            $rowIndex !== null &&
+            isset($this->rows[$rowIndex])
+        ) {
+            $this->rows[$rowIndex]['task_category_group_id'] = '';
+        }
     }
 
-    if (!isset($this->rows[$index])) {
-        return;
+    public function updatedEditRow($value, $key)
+    {
+        $this->resetValidation('editRow.' . $key);
+
+        if ($key === 'group_type') {
+            $this->editRow['task_category_group_id'] = '';
+        }
     }
 
-    $this->validate([
-        "rows.$index.group_type" => 'required|in:planning,harvesting',
-        "rows.$index.task_category_group_id" => [
-            'required',
-            Rule::exists('task_category_groups', 'id')->where(
-                fn ($query) => $query->where(
-                    'group_type',
-                    $this->rows[$index]['group_type'] ?? 'planning'
-                )
-            ),
-        ],
-        "rows.$index.name" => 'required|string|max:150',
-        "rows.$index.standard_fuel_per_hectare" => 'nullable|numeric|min:0',
-        "rows.$index.standard_hectare_per_hour" => 'nullable|numeric|min:0',
-        "rows.$index.description" => 'nullable|string|max:1000',
-        "rows.$index.status" => 'required|in:active,inactive',
-    ]);
+    public function saveRow($index)
+    {
+        if (!auth()->user()->hasPermission('task_categories.create')) {
+            abort(403, 'Permission denied.');
+        }
 
-    $row = $this->rows[$index];
+        if (!isset($this->rows[$index])) {
+            return;
+        }
 
-    TaskCategory::create([
-        'task_category_group_id' => $row['task_category_group_id'],
-        'name' => $row['name'],
-        'standard_fuel_per_hectare' => $row['standard_fuel_per_hectare'] ?: 0,
-        'standard_hectare_per_hour' => $row['standard_hectare_per_hour'] ?: 0,
-        'description' => $row['description'] ?: null,
-        'status' => $row['status'],
-        'created_by' => Auth::id(),
-        'updated_by' => Auth::id(),
-    ]);
+        $this->validate([
+            "rows.$index.group_type" => 'required|in:planning,harvesting',
+            "rows.$index.task_category_group_id" => [
+                'required',
+                Rule::exists('task_category_groups', 'id')->where(
+                    fn ($query) => $query->where(
+                        'group_type',
+                        $this->rows[$index]['group_type'] ?? 'planning'
+                    )
+                ),
+            ],
+            "rows.$index.name" => 'required|string|max:150',
+            "rows.$index.standard_fuel_per_hectare" => 'nullable|numeric|min:0',
+            "rows.$index.standard_hectare_per_hour" => 'nullable|numeric|min:0',
+            "rows.$index.description" => 'nullable|string|max:1000',
+            "rows.$index.status" => 'required|in:active,inactive',
+        ]);
 
-    unset($this->rows[$index]);
-    $this->rows = array_values($this->rows);
+        $row = $this->rows[$index];
 
-    session()->flash('success', 'Task category saved successfully.');
-}
+        TaskCategory::create([
+            'task_category_group_id' => $row['task_category_group_id'],
+            'name' => $row['name'],
+            'standard_fuel_per_hectare' => $row['standard_fuel_per_hectare'] ?: 0,
+            'standard_hectare_per_hour' => $row['standard_hectare_per_hour'] ?: 0,
+            'description' => $row['description'] ?: null,
+            'status' => $row['status'],
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+
+        unset($this->rows[$index]);
+        $this->rows = array_values($this->rows);
+
+        session()->flash('success', 'Task category saved successfully.');
+    }
 
     public function edit($id)
     {
@@ -232,7 +241,7 @@ public function saveRow($index)
         return $type === 'harvesting' ? 'Harvesting' : 'Planting';
     }
 
-    public function getTaskCategoriesProperty()
+    public function taskCategoriesQuery()
     {
         return TaskCategory::query()
             ->with('group')
@@ -254,28 +263,32 @@ public function saveRow($index)
                                 );
                         });
                 });
-            })
+            });
+    }
+
+    public function getTaskCategoriesProperty()
+    {
+        return $this->taskCategoriesQuery()
             ->orderBy('name')
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalFuelPerHaProperty()
     {
-        return $this->taskCategories->sum(function ($taskCategory) {
-            return (float) ($taskCategory->standard_fuel_per_hectare ?? 0);
-        });
+        return $this->taskCategoriesQuery()
+            ->sum('standard_fuel_per_hectare');
     }
 
     public function getTotalHaPerHrProperty()
     {
-        return $this->taskCategories->sum(function ($taskCategory) {
-            return (float) ($taskCategory->standard_hectare_per_hour ?? 0);
-        });
+        return $this->taskCategoriesQuery()
+            ->sum('standard_hectare_per_hour');
     }
 
     public function getTotalTaskCategoriesProperty()
     {
-        return $this->taskCategories->count();
+        return $this->taskCategoriesQuery()
+            ->count();
     }
 };
 
@@ -494,7 +507,7 @@ public function saveRow($index)
                     @forelse($this->taskCategories as $taskCategory)
                         @if($editingId === $taskCategory->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->taskCategories->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <select wire:model.live="editRow.group_type">
@@ -593,7 +606,7 @@ public function saveRow($index)
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->taskCategories->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     {{ $this->typeLabel($taskCategory->group?->group_type ?? 'planning') }}
@@ -804,6 +817,10 @@ public function saveRow($index)
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->taskCategories->links() }}
         </div>
     </div>
 </div>

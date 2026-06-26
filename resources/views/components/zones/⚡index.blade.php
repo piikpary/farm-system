@@ -1,13 +1,17 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Zone;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $search = '';
+    public $perPage = 10;
     public $rows = [];
 
     public $editingId = null;
@@ -25,6 +29,11 @@ new class extends Component
 
     public $mapTarget = null;
     public $mapIndex = null;
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
+    }
 
     public function addRow()
     {
@@ -259,14 +268,21 @@ new class extends Component
                 });
             })
             ->orderBy('zone_code')
-            ->get();
+            ->paginate($this->perPage);
     }
 
     public function getTotalAreaProperty()
     {
-        return $this->zones->sum(function ($zone) {
-            return (float) ($zone->total_area ?? 0);
-        });
+        return Zone::query()
+            ->when($this->search, function ($q) {
+                $q->where(function ($query) {
+                    $query->where('zone_code', 'like', '%' . $this->search . '%')
+                        ->orWhere('name', 'like', '%' . $this->search . '%')
+                        ->orWhere('location_note', 'like', '%' . $this->search . '%')
+                        ->orWhere('status', 'like', '%' . $this->search . '%');
+                });
+            })
+            ->sum('total_area');
     }
 };
 
@@ -556,7 +572,7 @@ new class extends Component
                     @forelse($this->zones as $zone)
                         @if($editingId === $zone->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->zones->firstItem() + $loop->index }}</td>
 
                                 <td>
                                     <input type="text" wire:model.live="editRow.zone_code">
@@ -618,7 +634,7 @@ new class extends Component
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $loop->iteration }}</td>
+                                <td class="row-no">{{ $this->zones->firstItem() + $loop->index }}</td>
 
                                 <td>{{ $zone->zone_code }}</td>
 
@@ -784,6 +800,10 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+        </div>
+
+        <div style="margin-top:14px;">
+            {{ $this->zones->links() }}
         </div>
     </div>
 
