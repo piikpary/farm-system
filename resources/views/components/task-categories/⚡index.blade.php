@@ -495,8 +495,6 @@ new class extends Component
                         <th>Type *</th>
                         <th>Group *</th>
                         <th>Name *</th>
-                        <th>Fuel / Ha/T</th>
-                        <th>Ha/T / Hr</th>
                         <th>Description</th>
                         <th>Status</th>
                         <th width="190">Action</th>
@@ -543,26 +541,6 @@ new class extends Component
                                     <input type="text" wire:model.live="editRow.name">
 
                                     @error('editRow.name')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
-
-                                <td>
-                                    <input type="number"
-                                           step="0.01"
-                                           wire:model.live="editRow.standard_fuel_per_hectare">
-
-                                    @error('editRow.standard_fuel_per_hectare')
-                                        <small class="error">{{ $message }}</small>
-                                    @enderror
-                                </td>
-
-                                <td>
-                                    <input type="number"
-                                           step="0.01"
-                                           wire:model.live="editRow.standard_hectare_per_hour">
-
-                                    @error('editRow.standard_hectare_per_hour')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
                                 </td>
@@ -618,13 +596,6 @@ new class extends Component
 
                                 <td>{{ $taskCategory->name }}</td>
 
-                                <td>
-                                    {{ number_format((float) $taskCategory->standard_fuel_per_hectare, 2) }}
-                                </td>
-
-                                <td>
-                                    {{ number_format((float) $taskCategory->standard_hectare_per_hour, 2) }}
-                                </td>
 
                                 <td>{{ $taskCategory->description ?? '-' }}</td>
 
@@ -717,27 +688,9 @@ new class extends Component
                                 @enderror
                             </td>
 
-                            <td>
-                                <input type="number"
-                                       step="0.01"
-                                       wire:model.live="rows.{{ $index }}.standard_fuel_per_hectare"
-                                       placeholder="0">
+                            
 
-                                @error("rows.$index.standard_fuel_per_hectare")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
-
-                            <td>
-                                <input type="number"
-                                       step="0.01"
-                                       wire:model.live="rows.{{ $index }}.standard_hectare_per_hour"
-                                       placeholder="0">
-
-                                @error("rows.$index.standard_hectare_per_hour")
-                                    <small class="error">{{ $message }}</small>
-                                @enderror
-                            </td>
+                            
 
                             <td>
                                 <input type="text"
@@ -794,26 +747,6 @@ new class extends Component
                                 -
                             @endif
                         </td>
-
-                        <td>-</td>
-
-                        <td>-</td>
-
-                        <td class="total-label">
-                            Total: {{ number_format((int) $this->totalTaskCategories) }}
-                        </td>
-
-                        <td>
-                            {{ number_format((float) $this->totalFuelPerHa, 2) }}
-                        </td>
-
-                        <td>
-                            {{ number_format((float) $this->totalHaPerHr, 2) }}
-                        </td>
-
-                        <td>-</td>
-                        <td>-</td>
-                        <td>-</td>
                     </tr>
                 </tfoot>
             </table>
