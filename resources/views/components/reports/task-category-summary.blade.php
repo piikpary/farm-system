@@ -230,6 +230,39 @@ new class extends Component
             return 0;
         }
 
+        /*
+         * Use the rate shown on the Work Plan row first.
+         * This fixes grouped report rows where the same task category
+         * has multiple work plans with different Request L/HA.
+         */
+        $planRate = $this->firstNumber(
+            $workPlan,
+            [
+                'request_l_per_ha',
+                'request_l_per_hectare',
+                'request_liters_per_ha',
+                'request_liters_per_hectare',
+                'request_litre_per_ha',
+                'request_litre_per_hectare',
+                'request_l_ha',
+                'request_l_per_t',
+                'request_l_per_ton',
+                'request_liters_per_t',
+                'request_liters_per_ton',
+                'request_litre_per_t',
+                'request_litre_per_ton',
+                'fuel_per_ha',
+                'fuel_per_hectare',
+                'fuel_per_t',
+                'fuel_per_ton',
+                'request_fuel_rate',
+            ]
+        );
+
+        if ($planRate > 0) {
+            return $planRate;
+        }
+
         if ($workPlan->activities && $workPlan->activities->isNotEmpty()) {
             $activity = $workPlan->activities->first(
                 fn ($activity) =>
@@ -241,10 +274,20 @@ new class extends Component
                     $activity,
                     [
                         'fuel_per_hectare',
+                        'fuel_per_ha',
                         'request_l_per_ha',
                         'request_l_per_hectare',
+                        'request_liters_per_ha',
+                        'request_liters_per_hectare',
+                        'request_litre_per_ha',
+                        'request_litre_per_hectare',
+                        'request_l_ha',
                         'request_l_per_t',
                         'request_l_per_ton',
+                        'request_liters_per_t',
+                        'request_liters_per_ton',
+                        'request_litre_per_t',
+                        'request_litre_per_ton',
                         'fuel_per_ton',
                     ]
                 );
@@ -253,23 +296,6 @@ new class extends Component
                     return $activityRate;
                 }
             }
-        }
-
-        $planRate = $this->firstNumber(
-            $workPlan,
-            [
-                'request_l_per_ha',
-                'request_l_per_hectare',
-                'request_l_per_t',
-                'request_l_per_ton',
-                'fuel_per_hectare',
-                'fuel_per_ton',
-                'request_fuel_rate',
-            ]
-        );
-
-        if ($planRate > 0) {
-            return $planRate;
         }
 
         $planQty = $this->planQtyValue($workPlan);
@@ -602,6 +628,11 @@ new class extends Component
                 $workPlan,
                 $taskCategoryId
             );
+
+            if ($planFuelRate <= 0 && $workingArea > 0) {
+                $planFuelRate =
+                    (float) $log->diesel_consumed / $workingArea;
+            }
 
             $current['plan_use_fuel'] +=
                 $workingArea * $planFuelRate;
