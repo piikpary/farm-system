@@ -641,8 +641,10 @@ new class extends Component
         );
 
         if ($logFuelRate <= 0 && $workingArea > 0) {
-            $logFuelRate =
-                (float) $log->diesel_consumed / $workingArea;
+            $logFuelRate = round(
+                (float) $log->diesel_consumed / $workingArea,
+                2
+            );
         }
 
         $current['plan_use_fuel'] +=
