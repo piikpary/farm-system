@@ -620,22 +620,34 @@ new class extends Component
             $current['finish_area'] +=
                 $workingArea;
 
-            $workPlan = $plansForLogs->get(
-                (int) $log->farm_work_plan_id
-            );
 
-            $planFuelRate = $this->planFuelRateForWorkPlan(
-                $workPlan,
-                $taskCategoryId
-            );
+            $logFuelRate = $this->firstNumber(
+            $log,
+            [
+                'l_per_ha',
+                'l_per_hectare',
+                'liter_per_ha',
+                'liters_per_ha',
+                'liter_per_hectare',
+                'liters_per_hectare',
+                'fuel_per_ha',
+                'fuel_per_hectare',
+                'l_per_t',
+                'l_per_ton',
+                'liter_per_ton',
+                'liters_per_ton',
+                'fuel_per_ton',
+            ]
+        );
 
-            if ($planFuelRate <= 0 && $workingArea > 0) {
-                $planFuelRate =
-                    (float) $log->diesel_consumed / $workingArea;
-            }
+        if ($logFuelRate <= 0 && $workingArea > 0) {
+            $logFuelRate =
+                (float) $log->diesel_consumed / $workingArea;
+        }
 
-            $current['plan_use_fuel'] +=
-                $workingArea * $planFuelRate;
+        $current['plan_use_fuel'] +=
+            $workingArea * $logFuelRate;
+
 
             $current['consumed_fuel'] +=
                 (float) $log->diesel_consumed;
