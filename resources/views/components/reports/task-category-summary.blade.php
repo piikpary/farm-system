@@ -162,39 +162,174 @@ new class extends Component
         });
     }
 
+    private function firstPositiveNumericValue(...$values): ?float
+    {
+        foreach ($values as $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if (is_string($value)) {
+                $value = str_replace(',', '', trim($value));
+            }
+
+            if (!is_numeric($value)) {
+                continue;
+            }
+
+            $number = (float) $value;
+
+            if (abs($number) <= 0.0000001) {
+                continue;
+            }
+
+            return $number;
+        }
+
+        return null;
+    }
+
+    private function activityRequestFuelAmount($activity): ?float
+    {
+        if (!$activity) {
+            return null;
+        }
+
+        return $this->firstPositiveNumericValue(
+            data_get($activity, 'request_l'),
+            data_get($activity, 'request_liter'),
+            data_get($activity, 'request_liters'),
+            data_get($activity, 'request_fuel'),
+            data_get($activity, 'request_fuel_l'),
+            data_get($activity, 'requested_fuel'),
+            data_get($activity, 'requested_liters')
+        );
+    }
+
+    private function planRequestFuelAmount($plan): ?float
+    {
+        return $this->firstPositiveNumericValue(
+            data_get($plan, 'request_l'),
+            data_get($plan, 'request_liter'),
+            data_get($plan, 'request_liters'),
+            data_get($plan, 'request_fuel'),
+            data_get($plan, 'request_fuel_l'),
+            data_get($plan, 'requested_fuel'),
+            data_get($plan, 'requested_liters')
+        );
+    }
+
+    private function planRequestFuelRate(
+        $plan,
+        $activity = null,
+        float $planArea = 0,
+        bool $allowPlanAmountFallback = true
+    ): float {
+        $rate = $this->firstPositiveNumericValue(
+            data_get($activity, 'fuel_per_hectare'),
+            data_get($activity, 'request_l_per_hectare'),
+            data_get($activity, 'request_l_per_ha'),
+            data_get($activity, 'request_fuel_per_hectare'),
+            data_get($activity, 'request_fuel_l_per_hectare'),
+            data_get($plan, 'request_l_per_hectare'),
+            data_get($plan, 'request_l_per_ha'),
+            data_get($plan, 'request_liter_per_hectare'),
+            data_get($plan, 'request_liters_per_hectare'),
+            data_get($plan, 'request_fuel_per_hectare'),
+            data_get($plan, 'request_fuel_l_per_hectare'),
+            data_get($plan, 'fuel_per_hectare'),
+            data_get($activity, 'taskCategory.standard_fuel_per_hectare'),
+            data_get($plan, 'taskCategory.standard_fuel_per_hectare')
+        );
+
+        if ($rate !== null) {
+            return $rate;
+        }
+
+        $amount = $this->activityRequestFuelAmount($activity);
+
+        if ($amount === null && $allowPlanAmountFallback) {
+            $amount = $this->planRequestFuelAmount($plan);
+        }
+
+        if ($amount !== null && $planArea > 0) {
+            return $amount / $planArea;
+        }
+
+        return 0;
+    }
+
+    private function planActivityRequestFuel(
+        $plan,
+        $activity,
+        float $planArea,
+        bool $allowPlanAmountFallback = true
+    ): float {
+        $amount = $this->activityRequestFuelAmount($activity);
+
+        if ($amount !== null) {
+            return $amount;
+        }
+
+        if ($allowPlanAmountFallback) {
+            $amount = $this->planRequestFuelAmount($plan);
+
+            if ($amount !== null) {
+                return $amount;
+            }
+        }
+
+        return $planArea * $this->planRequestFuelRate(
+            $plan,
+            $activity,
+            $planArea,
+            $allowPlanAmountFallback
+        );
+    }
+
+    private function legacyPlanRequestFuel($plan, float $planArea): float
+    {
+        $amount = $this->planRequestFuelAmount($plan);
+
+        if ($amount !== null) {
+            return $amount;
+        }
+
+        return $planArea * $this->planRequestFuelRate(
+            $plan,
+            null,
+            $planArea,
+            true
+        );
+    }
+
     private function buildRows()
     {
         /*
          * Formula concept used by both the page and exports:
          *
-         * Total Area              = Sum of plan area for this activity
-         * Finish Area             = Sum of working area from work logs
+         * Total Area              = SUM(work_plans.plan_area)
+         * Finish Area             = SUM(work_logs.working_area)
          * Remaining Area          = MAX(Total Area - Finish Area, 0)
          *
          * Request Fuel L/Ha       = Request Fuel / Total Area
-         * Request Fuel            = Sum(Plan Area Ã— Activity Fuel L/Ha)
-         * Plan Use Fuel           = Finish Area Ã— Request Fuel L/Ha
+         * Request Fuel            = SUM(work_plan request fuel)
+         * Plan Use Fuel           = SUM(work_log working area x its work plan request L/Ha)
          *
          * Consumed Fuel L/Ha      = Consumed Fuel / Finish Area
          * Remaining Fuel          = Request Fuel - Consumed Fuel
          * Remaining Fuel L/Ha     = Remaining Fuel / Remaining Area
          *
          * Variance Fuel           = Plan Use Fuel - Consumed Fuel
-         * Variance Fuel L/Ha      = Request Fuel L/Ha - Consumed Fuel L/Ha
+         * Variance Fuel L/Ha      = (Plan Use Fuel / Finish Area) - Consumed Fuel L/Ha
          *
          * Hectare/Hour            = Finish Area / Total Working Hour
          */
 
         $summary = collect();
+        $planFuelRateByPlanAndTask = collect();
         $selectedZoneBlockIds = $this->selectedZoneBlockIds();
 
-        /*
-         * New Work Plan concept:
-         * one plan can contain multiple activities.
-         *
-         * Each activity receives the plan's full planned area and its own
-         * fuel-per-hectare value.
-         */
         $plansQuery = FarmWorkPlan::with([
             'taskCategory.group',
             'activities.taskCategory.group',
@@ -261,6 +396,8 @@ new class extends Component
             $planArea = (float) $plan->plan_area;
 
             if ($plan->activities->isNotEmpty()) {
+                $activityCount = $plan->activities->count();
+
                 foreach ($plan->activities as $activity) {
                     $taskCategoryId =
                         (int) $activity->task_category_id;
@@ -283,11 +420,21 @@ new class extends Component
                         continue;
                     }
 
-                    $fuelPerHectare =
-                        (float) $activity->fuel_per_hectare;
+                    $allowPlanAmountFallback = $activityCount === 1;
 
-                    $requestFuel =
-                        $planArea * $fuelPerHectare;
+                    $fuelPerHectare = $this->planRequestFuelRate(
+                        $plan,
+                        $activity,
+                        $planArea,
+                        $allowPlanAmountFallback
+                    );
+
+                    $requestFuel = $this->planActivityRequestFuel(
+                        $plan,
+                        $activity,
+                        $planArea,
+                        $allowPlanAmountFallback
+                    );
 
                     $current = $summary->get(
                         $taskCategoryId,
@@ -299,6 +446,7 @@ new class extends Component
                                 )->name ?? '-',
                             'total_area' => 0,
                             'request_fuel' => 0,
+                            'plan_use_fuel' => 0,
                             'finish_area' => 0,
                             'consumed_fuel' => 0,
                             'total_working_hour' => 0,
@@ -309,15 +457,16 @@ new class extends Component
                     $current['request_fuel'] += $requestFuel;
 
                     $summary->put($taskCategoryId, $current);
+
+                    $planFuelRateByPlanAndTask->put(
+                        $plan->id . ':' . $taskCategoryId,
+                        $fuelPerHectare
+                    );
                 }
 
                 continue;
             }
 
-            /*
-             * Compatibility for old work plans created before the
-             * farm_work_plan_activities table was introduced.
-             */
             if ($plan->task_category_id) {
                 $taskCategoryId =
                     (int) $plan->task_category_id;
@@ -336,8 +485,17 @@ new class extends Component
                     continue;
                 }
 
-                $requestFuel =
-                    (float) $plan->request_liters;
+                $fuelPerHectare = $this->planRequestFuelRate(
+                    $plan,
+                    null,
+                    $planArea,
+                    true
+                );
+
+                $requestFuel = $this->legacyPlanRequestFuel(
+                    $plan,
+                    $planArea
+                );
 
                 $current = $summary->get(
                     $taskCategoryId,
@@ -349,6 +507,7 @@ new class extends Component
                             )->name ?? '-',
                         'total_area' => 0,
                         'request_fuel' => 0,
+                        'plan_use_fuel' => 0,
                         'finish_area' => 0,
                         'consumed_fuel' => 0,
                         'total_working_hour' => 0,
@@ -359,6 +518,11 @@ new class extends Component
                 $current['request_fuel'] += $requestFuel;
 
                 $summary->put($taskCategoryId, $current);
+
+                $planFuelRateByPlanAndTask->put(
+                    $plan->id . ':' . $taskCategoryId,
+                    $fuelPerHectare
+                );
             }
         }
 
@@ -426,6 +590,7 @@ new class extends Component
                         optional($log->taskCategory)->name ?? '-',
                     'total_area' => 0,
                     'request_fuel' => 0,
+                    'plan_use_fuel' => 0,
                     'finish_area' => 0,
                     'consumed_fuel' => 0,
                     'total_working_hour' => 0,
@@ -440,12 +605,24 @@ new class extends Component
                     $log->taskCategory->name;
             }
 
-            $current['finish_area'] +=
-                (float) $log->working_area;
+            $workingArea = (float) $log->working_area;
+            $workPlanId = (int) data_get($log, 'farm_work_plan_id');
 
+            $planRate = $planFuelRateByPlanAndTask->get(
+                $workPlanId . ':' . $taskCategoryId
+            );
+
+            if ($planRate === null) {
+                $planRate = ((float) $current['total_area']) > 0
+                    ? (float) $current['request_fuel'] /
+                        (float) $current['total_area']
+                    : 0;
+            }
+
+            $current['finish_area'] += $workingArea;
+            $current['plan_use_fuel'] += $workingArea * (float) $planRate;
             $current['consumed_fuel'] +=
                 (float) $log->diesel_consumed;
-
             $current['total_working_hour'] +=
                 (float) $log->working_duration;
 
@@ -463,6 +640,9 @@ new class extends Component
                 $requestFuel =
                     (float) $item['request_fuel'];
 
+                $planUseFuel =
+                    (float) $item['plan_use_fuel'];
+
                 $consumedFuel =
                     (float) $item['consumed_fuel'];
 
@@ -474,23 +654,18 @@ new class extends Component
                     0
                 );
 
-                // Weighted request rate. Never sum L/Ha rates.
                 $requestFuelPerHectare = $totalArea > 0
-                    ? round(
-                        $requestFuel / $totalArea,
-                        2
-                    )
+                    ? $requestFuel / $totalArea
                     : 0;
-
-                $planUseFuel =
-                    $finishArea * $requestFuelPerHectare;
 
                 $consumedFuelPerHectare =
                     $finishArea > 0
-                        ? round(
-                            $consumedFuel / $finishArea,
-                            2
-                        )
+                        ? $consumedFuel / $finishArea
+                        : 0;
+
+                $planUseFuelPerHectare =
+                    $finishArea > 0
+                        ? $planUseFuel / $finishArea
                         : 0;
 
                 $remainingFuel =
@@ -501,16 +676,11 @@ new class extends Component
                         ? $remainingFuel / $remainingArea
                         : 0;
 
-                // Positive = used less than the planned fuel for finished area.
-                // Negative = over-consumed.
                 $varianceFuel =
                     $planUseFuel - $consumedFuel;
 
-                $varianceFuelPerHectare = round(
-                    $requestFuelPerHectare -
-                    $consumedFuelPerHectare,
-                    2
-                );
+                $varianceFuelPerHectare =
+                    $planUseFuelPerHectare - $consumedFuelPerHectare;
 
                 $hectarePerHour =
                     $totalWorkingHour > 0
@@ -671,12 +841,10 @@ new class extends Component
             );
 
             // H: Planned fuel for the finished area.
+            // It is already calculated from each work log area x its own work plan request L/Ha.
             $sheet->setCellValue(
                 'H' . $rowNumber,
-                '=F' .
-                $rowNumber .
-                '*D' .
-                $rowNumber
+                (float) $row['plan_use_fuel']
             );
 
             // I: Actual consumed fuel from Work Logs.
@@ -727,14 +895,17 @@ new class extends Component
                 $rowNumber
             );
 
-            // N: Rate variance = Planned rate - Actual rate.
+            // N: Rate variance = Plan Use Fuel per finished area - Actual rate.
             $sheet->setCellValue(
                 'N' . $rowNumber,
-                '=ROUND(F' .
+                '=IF(D' .
                 $rowNumber .
-                ',2)-ROUND(J' .
+                '>0,H' .
                 $rowNumber .
-                ',2)'
+                '/D' .
+                $rowNumber .
+                ',0)-J' .
+                $rowNumber
             );
 
             // O: Total working hour.
@@ -852,11 +1023,14 @@ new class extends Component
 
             $sheet->setCellValue(
                 'N' . $rowNumber,
-                '=ROUND(F' .
+                '=IF(D' .
                 $rowNumber .
-                ',2)-ROUND(J' .
+                '>0,H' .
                 $rowNumber .
-                ',2)'
+                '/D' .
+                $rowNumber .
+                ',0)-J' .
+                $rowNumber
             );
 
             $sheet->setCellValue(
