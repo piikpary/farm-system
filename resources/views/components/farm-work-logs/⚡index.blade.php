@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\FarmWorkLog;
 use App\Models\FarmWorkPlan;
 use App\Models\Tractor;
@@ -28,6 +29,7 @@ new class extends Component
     public $perPage = 15;
     public $workLogType = 'planning';
     public $filterOpen = false;
+    use WithPagination;
 
     protected $queryString = [
         'workLogType' => ['except' => 'planning'],
@@ -1574,8 +1576,7 @@ new class extends Component
             'logs' => $this->logsQuery()
                 ->orderByDesc('work_date')
                 ->orderByDesc('id')
-                ->limit($perPage)
-                ->get(),
+                ->paginate($perPage),
 
             'workPlans' => FarmWorkPlan::with([
                     'taskCategory.group',
@@ -2966,6 +2967,9 @@ new class extends Component
                     </tr>
                 </tfoot>
             </table>
+             <div style="padding: 14px;">
+                {{ $logs->links() }}
+            </div>
         </div>
     </div>
 
