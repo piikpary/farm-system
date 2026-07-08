@@ -623,8 +623,8 @@ new class extends Component
                                         @if(auth()->user()->hasPermission('task_categories.delete'))
                                             <button type="button"
                                                     wire:click="delete({{ $taskCategory->id }})"
-                                                    class="mini danger"
-                                                    onclick="return confirm('Delete this task category?')">
+                                                    wire:confirm="Delete this task category?"
+                                                    class="mini danger">
                                                 Delete
                                             </button>
                                         @endif
