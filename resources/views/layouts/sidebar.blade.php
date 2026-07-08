@@ -535,6 +535,14 @@
                             <span>{{ __('sidebar.tractors') }}</span>
                         </a>
                     @endif
+                    @if($showMachines)
+                        <a href="{{ route('machines.index') }}"
+                        class="farm-menu-link {{ request()->routeIs('machines.*') ? 'active' : '' }}"
+                        title="Machine">
+                            <span class="farm-menu-icon">⚙️</span>
+                            <span>Machine</span>
+                        </a>
+                    @endif
 
                     @if($showDrivers && $user->hasPermission('drivers.view'))
                         <a href="{{ route('drivers.index') }}"
@@ -572,14 +580,7 @@
                         </a>
                     @endif
 
-                    @if($showMachines)
-                        <a href="{{ route('machines.index') }}"
-                        class="farm-menu-link {{ request()->routeIs('machines.*') ? 'active' : '' }}"
-                        title="Machine">
-                            <span class="farm-menu-icon">⚙️</span>
-                            <span>Machine</span>
-                        </a>
-                    @endif
+                    
 
                     @if($showTaskCategories && $user->hasPermission('task_categories.view'))
                         <a href="{{ route('task-category-groups.index') }}"
