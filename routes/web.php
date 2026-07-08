@@ -10,6 +10,8 @@ use App\Http\Controllers\AiHelpController;
 use App\Http\Controllers\DriverMobileWorkController;
 use Livewire\Volt\Volt;
 use App\Http\Controllers\TaskCategoryGroupController;
+use App\Http\Controllers\LocationController;
+use App\Http\Controllers\MachineController;
 
 Route::middleware(['setLocale'])->group(function () {
     Route::get('/', function () {
@@ -247,6 +249,26 @@ Route::middleware(['auth', 'setLocale'])->group(function () {
         'task-category-groups',
         TaskCategoryGroupController::class
     )->except('show');
+
+    /*
+        |--------------------------------------------------------------------------
+        | Locations
+        |--------------------------------------------------------------------------
+        */
+        Route::resource(
+            'locations',
+            LocationController::class
+        )->except('show');
+
+        /*
+        |--------------------------------------------------------------------------
+        | Machines
+        |--------------------------------------------------------------------------
+        */
+        Route::resource(
+            'machines',
+            MachineController::class
+        )->except('show');
     /*
     |--------------------------------------------------------------------------
     | Roles

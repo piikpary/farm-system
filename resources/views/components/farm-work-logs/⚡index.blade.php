@@ -11,6 +11,8 @@ use App\Models\ZoneBlock;
 use App\Models\TaskCategory;
 use App\Models\FuelStock;
 use App\Models\FuelTransaction;
+use App\Models\Machine;
+use App\Models\Location;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -26,6 +28,8 @@ new class extends Component
     public $zoneId = '';
     public $taskCategoryId = '';
     public $workPlanId = '';
+    public $machineId = '';
+    public $locationId = '';
     public $perPage = 15;
     public $workLogType = 'planning';
     public $filterOpen = false;
@@ -48,9 +52,13 @@ new class extends Component
         'zone_id' => '',
         'zone_block_id' => '',
         'zone_block_select' => '',
+        'machine_id' => '',
+        'location_id' => '',
         'task_category_id' => '',
         'working_duration' => '',
         'working_area' => '',
+        'consume_l_per_hour' => '',
+        'total_consume_liter' => '',
         'diesel_start' => '',
         'diesel_refill' => '',
         'diesel_end' => '',
@@ -59,7 +67,7 @@ new class extends Component
 
     public function mount()
     {
-        if (!in_array($this->workLogType, ['planning', 'harvesting'], true)) {
+        if (!in_array($this->workLogType, ['planning', 'harvesting', 'facility'], true)) {
             $this->workLogType = 'planning';
         }
     }
@@ -70,7 +78,7 @@ new class extends Component
 
     public function updatedWorkLogType()
     {
-        if (!in_array($this->workLogType, ['planning', 'harvesting'], true)) {
+        if (!in_array($this->workLogType, ['planning', 'harvesting', 'facility'], true)) {
             $this->workLogType = 'planning';
         }
 
@@ -82,36 +90,51 @@ new class extends Component
         $this->zoneId = '';
         $this->taskCategoryId = '';
         $this->workPlanId = '';
+        $this->machineId = '';
+        $this->locationId = '';
         $this->rows = [];
         $this->cancelEdit();
     }
 
     public function workLogTypeLabel(): string
     {
-        return $this->workLogType === 'harvesting'
-            ? 'Harvesting'
-            : 'Planting';
+        return [
+            'planning' => 'Planting',
+            'harvesting' => 'Harvesting',
+            'facility' => 'Facility',
+        ][$this->workLogType] ?? 'Planting';
+    }
+
+    public function isFacility(): bool
+    {
+        return $this->workLogType === 'facility';
     }
 
     public function workLogQtyLabel(): string
     {
-        return $this->workLogType === 'harvesting'
-            ? 'Total Tons'
-            : 'Total Area';
+        return match ($this->workLogType) {
+            'harvesting' => 'Total Tons',
+            'facility' => 'Total Hour',
+            default => 'Total Area',
+        };
     }
 
     public function workLogDieselRateLabel(): string
     {
-        return $this->workLogType === 'harvesting'
-            ? 'L/T'
-            : 'L/Ha';
+        return match ($this->workLogType) {
+            'harvesting' => 'L/T',
+            'facility' => 'Consume L/H',
+            default => 'L/Ha',
+        };
     }
 
     public function workLogProductivityLabel(): string
     {
-        return $this->workLogType === 'harvesting'
-            ? 'T/Hr'
-            : 'Ha/Hr';
+        return match ($this->workLogType) {
+            'harvesting' => 'T/Hr',
+            'facility' => 'Total Consume (L)',
+            default => 'Ha/Hr',
+        };
     }
 
     public function addRow()
@@ -138,6 +161,10 @@ new class extends Component
             'diesel_refill' => '',
             'diesel_end' => '',
             'note' => '',
+            'machine_id' => '',
+            'location_id' => '',
+            'consume_l_per_hour' => '',
+            'total_consume_liter' => '',
         ];
     }
 
@@ -151,6 +178,47 @@ new class extends Component
 
         $this->rows = array_values($this->rows);
     }
+    public function updatedRows($value, $key)
+{
+    if (!$this->isFacility()) {
+        return;
+    }
+
+    $parts = explode('.', $key);
+    $rowIndex = isset($parts[0]) ? (int) $parts[0] : null;
+    $field = $parts[1] ?? null;
+
+    if ($rowIndex === null || !isset($this->rows[$rowIndex])) {
+        return;
+    }
+
+    if (in_array($field, ['consume_l_per_hour', 'working_duration'], true)) {
+        $consumePerHour = (float) ($this->rows[$rowIndex]['consume_l_per_hour'] ?? 0);
+        $workingDuration = (float) ($this->rows[$rowIndex]['working_duration'] ?? 0);
+
+        $this->rows[$rowIndex]['total_consume_liter'] = round(
+            $consumePerHour * $workingDuration,
+            2
+        );
+    }
+}
+
+public function updatedEditRow($value, $key)
+{
+    if (!$this->isFacility()) {
+        return;
+    }
+
+    if (in_array($key, ['consume_l_per_hour', 'working_duration'], true)) {
+        $consumePerHour = (float) ($this->editRow['consume_l_per_hour'] ?? 0);
+        $workingDuration = (float) ($this->editRow['working_duration'] ?? 0);
+
+        $this->editRow['total_consume_liter'] = round(
+            $consumePerHour * $workingDuration,
+            2
+        );
+    }
+}
 
     public function syncZoneSelection($index)
     {
@@ -314,6 +382,15 @@ new class extends Component
             ->values()
             ->implode(', ');
 
+        if ($this->isFacility()) {
+            return collect([
+                $taskGroupNames ?: ($plan->title ?: '-'),
+                $activityNames ?: '-',
+                $plan->machine?->name ?: '-',
+                $plan->location?->name ?: '-',
+            ])->implode(' | ');
+        }
+
         $zoneBlockNames = $this->getWorkPlanZoneBlocks($plan->id)
             ->map(fn ($block) => $this->formatZoneBlockLabel($block))
             ->filter()
@@ -326,6 +403,24 @@ new class extends Component
             $activityNames ?: '-',
             $zoneBlockNames ?: '-',
         ])->implode(' | ');
+    }
+
+    public function getMachineName($machineId): string
+    {
+        if (!$machineId) {
+            return '-';
+        }
+
+        return Machine::whereKey($machineId)->value('name') ?: '-';
+    }
+
+    public function getLocationName($locationId): string
+    {
+        if (!$locationId) {
+            return '-';
+        }
+
+        return Location::whereKey($locationId)->value('name') ?: '-';
     }
 
     public function applyWorkPlanToRow($index)
@@ -341,6 +436,10 @@ new class extends Component
         $this->rows[$index]['zone_id'] = '';
         $this->rows[$index]['zone_block_id'] = '';
         $this->rows[$index]['zone_block_select'] = '';
+        $this->rows[$index]['machine_id'] = '';
+        $this->rows[$index]['location_id'] = '';
+        $this->rows[$index]['consume_l_per_hour'] = '';
+        $this->rows[$index]['total_consume_liter'] = '';
 
         if (!$planId) {
             return;
@@ -349,6 +448,8 @@ new class extends Component
         $plan = FarmWorkPlan::with([
             'taskCategory.group',
             'activities.taskCategory.group',
+            'machine',
+            'location',
         ])->find($planId);
 
         if (!$plan) {
@@ -381,6 +482,16 @@ new class extends Component
             optional($plan->plan_date)->format('Y-m-d')
             ?: now()->format('Y-m-d');
 
+        if ($this->isFacility()) {
+            $this->rows[$index]['machine_id'] = $plan->machine_id;
+            $this->rows[$index]['location_id'] = $plan->location_id;
+            $this->rows[$index]['consume_l_per_hour'] = $plan->request_l_per_hectare;
+            $this->rows[$index]['working_duration'] = '';
+            $this->rows[$index]['working_area'] = '';
+            $this->rows[$index]['total_consume_liter'] = '';
+            return;
+        }
+
         $blocks = $this->getWorkPlanZoneBlocks($planId);
 
         if ($blocks->isNotEmpty()) {
@@ -401,6 +512,10 @@ new class extends Component
         $this->editRow['zone_id'] = '';
         $this->editRow['zone_block_id'] = '';
         $this->editRow['zone_block_select'] = '';
+        $this->editRow['machine_id'] = '';
+        $this->editRow['location_id'] = '';
+        $this->editRow['consume_l_per_hour'] = '';
+        $this->editRow['total_consume_liter'] = '';
 
         if (!$planId) {
             return;
@@ -409,6 +524,8 @@ new class extends Component
         $plan = FarmWorkPlan::with([
             'taskCategory.group',
             'activities.taskCategory.group',
+            'machine',
+            'location',
         ])->find($planId);
 
         if (!$plan) {
@@ -441,6 +558,13 @@ new class extends Component
             optional($plan->plan_date)->format('Y-m-d')
             ?: now()->format('Y-m-d');
 
+        if ($this->isFacility()) {
+            $this->editRow['machine_id'] = $plan->machine_id;
+            $this->editRow['location_id'] = $plan->location_id;
+            $this->editRow['consume_l_per_hour'] = $plan->request_l_per_hectare;
+            return;
+        }
+
         $blocks = $this->getWorkPlanZoneBlocks($planId);
 
         if ($blocks->isNotEmpty()) {
@@ -454,11 +578,28 @@ new class extends Component
 
     public function calculateRow($row)
     {
-        $workingDuration = (float) ($row['working_duration'] ?: 0);
-        $workingArea = (float) ($row['working_area'] ?: 0);
-        $dieselStart = (float) ($row['diesel_start'] ?: 0);
-        $dieselRefill = (float) ($row['diesel_refill'] ?: 0);
-        $dieselEnd = (float) ($row['diesel_end'] ?: 0);
+        if ($this->isFacility()) {
+            $consumePerHour = (float) ($row['consume_l_per_hour'] ?? 0);
+            $workingDuration = (float) ($row['working_duration'] ?? 0);
+
+            $totalConsume = filled($row['total_consume_liter'] ?? null)
+                ? (float) $row['total_consume_liter']
+                : ($consumePerHour * $workingDuration);
+
+            $totalConsume = max($totalConsume, 0);
+
+            return [
+                'diesel_consumed' => $totalConsume,
+                'diesel_per_hectare' => $consumePerHour,
+                'hectare_per_hour' => $totalConsume,
+            ];
+        }
+
+        $workingDuration = (float) ($row['working_duration'] ?? 0);
+        $workingArea = (float) ($row['working_area'] ?? 0);
+        $dieselStart = (float) ($row['diesel_start'] ?? 0);
+        $dieselRefill = (float) ($row['diesel_refill'] ?? 0);
+        $dieselEnd = (float) ($row['diesel_end'] ?? 0);
 
         $dieselUsed = ($dieselStart + $dieselRefill) - $dieselEnd;
         $dieselUsed = max($dieselUsed, 0);
@@ -724,20 +865,36 @@ new class extends Component
             "rows.$index.farm_work_plan_id" =>
                 'required|exists:farm_work_plans,id',
             "rows.$index.work_date" => 'required|date',
-            "rows.$index.tractor_id" =>
-                'required|exists:tractors,id',
-            "rows.$index.driver_id" =>
-                'required|exists:drivers,id',
-            "rows.$index.zone_id" =>
-                'required|exists:zones,id',
-            "rows.$index.zone_block_id" =>
-                'required|exists:zone_blocks,id',
+            "rows.$index.tractor_id" => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:tractors,id',
+            "rows.$index.driver_id" => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:drivers,id',
+            "rows.$index.zone_id" => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:zones,id',
+            "rows.$index.zone_block_id" => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:zone_blocks,id',
+            "rows.$index.machine_id" => $this->isFacility()
+                ? 'required|exists:machines,id'
+                : 'nullable',
+            "rows.$index.location_id" => $this->isFacility()
+                ? 'required|exists:locations,id'
+                : 'nullable',
             "rows.$index.task_category_id" =>
                 'required|exists:task_categories,id',
             "rows.$index.working_duration" =>
                 'nullable|numeric|min:0',
             "rows.$index.working_area" =>
                 'nullable|numeric|min:0',
+            "rows.$index.consume_l_per_hour" => $this->isFacility()
+                ? 'required|numeric|min:0'
+                : 'nullable|numeric|min:0',
+            "rows.$index.total_consume_liter" => $this->isFacility()
+                ? 'required|numeric|min:0'
+                : 'nullable|numeric|min:0',
             "rows.$index.diesel_start" =>
                 'nullable|numeric|min:0',
             "rows.$index.diesel_refill" =>
@@ -758,22 +915,24 @@ new class extends Component
                         $row['farm_work_plan_id'],
                     'work_date' => $row['work_date'],
                     'work_status' => 'pending',
-                    'tractor_id' => $row['tractor_id'],
-                    'driver_id' => $row['driver_id'],
-                    'zone_id' => $row['zone_id'],
-                    'zone_block_id' => $row['zone_block_id'],
+                    'tractor_id' => $this->isFacility() ? null : $row['tractor_id'],
+                    'driver_id' => $this->isFacility() ? null : $row['driver_id'],
+                    'zone_id' => $this->isFacility() ? null : $row['zone_id'],
+                    'zone_block_id' => $this->isFacility() ? null : $row['zone_block_id'],
+                    'machine_id' => $this->isFacility() ? ($row['machine_id'] ?? null) : null,
+                    'location_id' => $this->isFacility() ? ($row['location_id'] ?? null) : null,
                     'task_category_id' =>
                         $row['task_category_id'],
                     'working_duration' =>
                         $row['working_duration'] ?: 0,
                     'working_area' =>
-                        $row['working_area'] ?: 0,
+                        $this->isFacility() ? 0 : ($row['working_area'] ?: 0),
                     'diesel_start' =>
-                        $row['diesel_start'] ?: 0,
+                        $this->isFacility() ? 0 : ($row['diesel_start'] ?: 0),
                     'diesel_refill' =>
-                        $row['diesel_refill'] ?: 0,
+                        $this->isFacility() ? $calculated['diesel_consumed'] : ($row['diesel_refill'] ?: 0),
                     'diesel_end' =>
-                        $row['diesel_end'] ?: 0,
+                        $this->isFacility() ? 0 : ($row['diesel_end'] ?: 0),
                     'diesel_consumed' =>
                         $calculated['diesel_consumed'],
                     'diesel_per_hectare' =>
@@ -790,7 +949,7 @@ new class extends Component
 
                 $this->deductFuelStock(
                     $calculated['diesel_consumed'],
-                    $row['tractor_id'],
+                    $this->isFacility() ? null : $row['tractor_id'],
                     $workLog->id,
                     $row['work_date']
                 );
@@ -841,9 +1000,13 @@ new class extends Component
             'zone_id' => $log->zone_id,
             'zone_block_id' => $log->zone_block_id,
             'zone_block_select' => $zoneSelect,
+            'machine_id' => $log->machine_id,
+            'location_id' => $log->location_id,
             'task_category_id' => $log->task_category_id,
             'working_duration' => $log->working_duration,
             'working_area' => $log->working_area,
+            'consume_l_per_hour' => $log->diesel_per_hectare,
+            'total_consume_liter' => $log->diesel_consumed,
             'diesel_start' => $log->diesel_start,
             'diesel_refill' => $log->diesel_refill,
             'diesel_end' => $log->diesel_end,
@@ -872,6 +1035,10 @@ new class extends Component
             'diesel_refill' => '',
             'diesel_end' => '',
             'note' => '',
+            'machine_id' => '',
+            'location_id' => '',
+            'consume_l_per_hour' => '',
+            'total_consume_liter' => '',
         ];
     }
 
@@ -889,20 +1056,36 @@ new class extends Component
             'editRow.farm_work_plan_id' =>
                 'required|exists:farm_work_plans,id',
             'editRow.work_date' => 'required|date',
-            'editRow.tractor_id' =>
-                'required|exists:tractors,id',
-            'editRow.driver_id' =>
-                'required|exists:drivers,id',
-            'editRow.zone_id' =>
-                'required|exists:zones,id',
-            'editRow.zone_block_id' =>
-                'required|exists:zone_blocks,id',
+            'editRow.tractor_id' => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:tractors,id',
+            'editRow.driver_id' => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:drivers,id',
+            'editRow.zone_id' => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:zones,id',
+            'editRow.zone_block_id' => $this->isFacility()
+                ? 'nullable'
+                : 'required|exists:zone_blocks,id',
+            'editRow.machine_id' => $this->isFacility()
+                ? 'required|exists:machines,id'
+                : 'nullable',
+            'editRow.location_id' => $this->isFacility()
+                ? 'required|exists:locations,id'
+                : 'nullable',
             'editRow.task_category_id' =>
                 'required|exists:task_categories,id',
             'editRow.working_duration' =>
                 'nullable|numeric|min:0',
             'editRow.working_area' =>
                 'nullable|numeric|min:0',
+            'editRow.consume_l_per_hour' => $this->isFacility()
+                ? 'required|numeric|min:0'
+                : 'nullable|numeric|min:0',
+            'editRow.total_consume_liter' => $this->isFacility()
+                ? 'required|numeric|min:0'
+                : 'nullable|numeric|min:0',
             'editRow.diesel_start' =>
                 'nullable|numeric|min:0',
             'editRow.diesel_refill' =>
@@ -932,7 +1115,7 @@ new class extends Component
                     if ($difference > 0) {
                         $this->deductFuelStock(
                             $difference,
-                            $this->editRow['tractor_id'],
+                            $this->isFacility() ? null : $this->editRow['tractor_id'],
                             $log->id,
                             $this->editRow['work_date']
                         );
@@ -941,7 +1124,7 @@ new class extends Component
                     if ($difference < 0) {
                         $this->returnFuelStock(
                             abs($difference),
-                            $this->editRow['tractor_id'],
+                            $this->isFacility() ? null : $this->editRow['tractor_id'],
                             $log->id,
                             $this->editRow['work_date']
                         );
@@ -955,25 +1138,29 @@ new class extends Component
                         'work_status' =>
                             $log->work_status ?: 'pending',
                         'tractor_id' =>
-                            $this->editRow['tractor_id'],
+                            $this->isFacility() ? null : $this->editRow['tractor_id'],
                         'driver_id' =>
-                            $this->editRow['driver_id'],
+                            $this->isFacility() ? null : $this->editRow['driver_id'],
                         'zone_id' =>
-                            $this->editRow['zone_id'],
+                            $this->isFacility() ? null : $this->editRow['zone_id'],
                         'zone_block_id' =>
-                            $this->editRow['zone_block_id'],
+                            $this->isFacility() ? null : $this->editRow['zone_block_id'],
+                        'machine_id' =>
+                            $this->isFacility() ? ($this->editRow['machine_id'] ?? null) : null,
+                        'location_id' =>
+                            $this->isFacility() ? ($this->editRow['location_id'] ?? null) : null,
                         'task_category_id' =>
                             $this->editRow['task_category_id'],
                         'working_duration' =>
                             $this->editRow['working_duration'] ?: 0,
                         'working_area' =>
-                            $this->editRow['working_area'] ?: 0,
+                            $this->isFacility() ? 0 : ($this->editRow['working_area'] ?: 0),
                         'diesel_start' =>
-                            $this->editRow['diesel_start'] ?: 0,
+                            $this->isFacility() ? 0 : ($this->editRow['diesel_start'] ?: 0),
                         'diesel_refill' =>
-                            $this->editRow['diesel_refill'] ?: 0,
+                            $this->isFacility() ? $newDieselUsed : ($this->editRow['diesel_refill'] ?: 0),
                         'diesel_end' =>
-                            $this->editRow['diesel_end'] ?: 0,
+                            $this->isFacility() ? 0 : ($this->editRow['diesel_end'] ?: 0),
                         'diesel_consumed' => $newDieselUsed,
                         'diesel_per_hectare' =>
                             $calculated['diesel_per_hectare'],
@@ -1042,6 +1229,8 @@ new class extends Component
         $this->zoneId = '';
         $this->taskCategoryId = '';
         $this->workPlanId = '';
+        $this->machineId = '';
+        $this->locationId = '';
         $this->perPage = 15;
     }
 
@@ -1051,6 +1240,10 @@ new class extends Component
             ->with([
                 'workPlan.taskCategory.group',
                 'workPlan.activities.taskCategory.group',
+                'workPlan.machine',
+                'workPlan.location',
+                'machine',
+                'location',
                 'tractor',
                 'driver',
                 'zone',
@@ -1120,6 +1313,26 @@ new class extends Component
                                     'driver',
                                     function ($driverQuery) use ($search) {
                                         $driverQuery->where(
+                                            'name',
+                                            'like',
+                                            '%' . $search . '%'
+                                        );
+                                    }
+                                )
+                                ->orWhereHas(
+                                    'machine',
+                                    function ($machineQuery) use ($search) {
+                                        $machineQuery->where(
+                                            'name',
+                                            'like',
+                                            '%' . $search . '%'
+                                        );
+                                    }
+                                )
+                                ->orWhereHas(
+                                    'location',
+                                    function ($locationQuery) use ($search) {
+                                        $locationQuery->where(
                                             'name',
                                             'like',
                                             '%' . $search . '%'
@@ -1221,6 +1434,20 @@ new class extends Component
                 fn ($query) => $query->where(
                     'farm_work_plan_id',
                     $this->workPlanId
+                )
+            )
+            ->when(
+                $this->isFacility() && filled($this->machineId),
+                fn ($query) => $query->where(
+                    'machine_id',
+                    $this->machineId
+                )
+            )
+            ->when(
+                $this->isFacility() && filled($this->locationId),
+                fn ($query) => $query->where(
+                    'location_id',
+                    $this->locationId
                 )
             );
     }
@@ -1562,6 +1789,39 @@ new class extends Component
             ]
         );
     }
+    public function getTotalConsumePerHourProperty()
+{
+    return (clone $this->logsQuery())
+        ->sum('diesel_per_hectare');
+}
+    public function getDraftFacilityTotalsProperty()
+{
+    if (!$this->isFacility()) {
+        return [
+            'consume_l_per_hour' => 0,
+            'total_hour' => 0,
+            'total_consume_liter' => 0,
+        ];
+    }
+
+    $consumePerHour = 0;
+    $totalHour = 0;
+    $totalConsume = 0;
+
+    foreach ($this->rows as $row) {
+        $calc = $this->calculateRow($row);
+
+        $consumePerHour += (float) ($row['consume_l_per_hour'] ?? 0);
+        $totalHour += (float) ($row['working_duration'] ?? 0);
+        $totalConsume += (float) ($calc['diesel_consumed'] ?? 0);
+    }
+
+    return [
+        'consume_l_per_hour' => $consumePerHour,
+        'total_hour' => $totalHour,
+        'total_consume_liter' => $totalConsume,
+    ];
+}
 
     public function with()
     {
@@ -1581,6 +1841,8 @@ new class extends Component
             'workPlans' => FarmWorkPlan::with([
                     'taskCategory.group',
                     'activities.taskCategory.group',
+                    'machine',
+                    'location',
                 ])
                 ->whereIn(
                     'status',
@@ -1602,6 +1864,8 @@ new class extends Component
             'filterWorkPlans' => FarmWorkPlan::with([
                     'taskCategory.group',
                     'activities.taskCategory.group',
+                    'machine',
+                    'location',
                 ])
                 ->where(function ($query) {
                     $query
@@ -1631,6 +1895,16 @@ new class extends Component
             'zoneBlocks' => ZoneBlock::with('zone')
                 ->where('status', 'active')
                 ->orderBy('block_code')
+                ->get(),
+
+            'machines' => Machine::query()
+                ->whereIn('status', ['active', 'Active'])
+                ->orderBy('name')
+                ->get(),
+
+            'locations' => Location::query()
+                ->whereIn('status', ['active', 'Active'])
+                ->orderBy('name')
                 ->get(),
 
             'taskCategories' => TaskCategory::with('group')
@@ -2043,6 +2317,16 @@ new class extends Component
         min-height: 58px !important;
         max-height: 58px !important;
     }
+    .total-consume-input {
+    font-weight: 900 !important;
+    color: #0f172a !important;
+    }
+
+    .total-consume-input::placeholder {
+        font-weight: 900 !important;
+        color: #0f172a !important;
+        opacity: 1 !important;
+    }
 </style>
 
     <div class="page-header">
@@ -2050,10 +2334,6 @@ new class extends Component
             <h1 class="page-title">
                 {{ $this->workLogTypeLabel() }} Work Logs
             </h1>
-
-            <p class="page-subtitle">
-                Daily tractor work, area, fuel, and productivity records.
-            </p>
         </div>
 
         <div class="page-actions">
@@ -2145,58 +2425,88 @@ new class extends Component
                 </select>
             </div>
 
+            @if($this->isFacility())
+    <div>
+        <label>Equipment</label>
+
+        <select wire:model.live="machineId">
+            <option value="">All Equipment</option>
+
+            @foreach($machines as $machine)
+                <option value="{{ $machine->id }}">
+                    {{ $machine->name }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+
+    <div>
+        <label>Location</label>
+
+        <select wire:model.live="locationId">
+            <option value="">All Locations</option>
+
+            @foreach($locations as $location)
+                <option value="{{ $location->id }}">
+                    {{ $location->name }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+@else
+    <div>
+        <label>Tractor</label>
+
+        <select wire:model.live="tractorId">
+            <option value="">
+                {{ __('pages.all_tractors') }}
+            </option>
+
+            @foreach($tractors as $tractor)
+                <option value="{{ $tractor->id }}">
+                    {{ $tractor->tractor_no }}
+                    {{ $tractor->name ? '- ' . $tractor->name : '' }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+
+    <div>
+        <label>Driver</label>
+
+        <select wire:model.live="driverId">
+            <option value="">
+                {{ __('pages.all_drivers') }}
+            </option>
+
+            @foreach($drivers as $driver)
+                <option value="{{ $driver->id }}">
+                    {{ $driver->name }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+
+    <div>
+        <label>Zone</label>
+
+        <select wire:model.live="zoneId">
+            <option value="">
+                {{ __('pages.all_zones') }}
+            </option>
+
+            @foreach($zones as $zone)
+                <option value="{{ $zone->id }}">
+                    {{ $zone->zone_code }}
+                    {{ $zone->name ? '- ' . $zone->name : '' }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+@endif
+
             <div>
-                <label>Tractor</label>
-
-                <select wire:model.live="tractorId">
-                    <option value="">
-                        {{ __('pages.all_tractors') }}
-                    </option>
-
-                    @foreach($tractors as $tractor)
-                        <option value="{{ $tractor->id }}">
-                            {{ $tractor->tractor_no }}
-                            {{ $tractor->name ? '- ' . $tractor->name : '' }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label>Driver</label>
-
-                <select wire:model.live="driverId">
-                    <option value="">
-                        {{ __('pages.all_drivers') }}
-                    </option>
-
-                    @foreach($drivers as $driver)
-                        <option value="{{ $driver->id }}">
-                            {{ $driver->name }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label>Zone</label>
-
-                <select wire:model.live="zoneId">
-                    <option value="">
-                        {{ __('pages.all_zones') }}
-                    </option>
-
-                    @foreach($zones as $zone)
-                        <option value="{{ $zone->id }}">
-                            {{ $zone->zone_code }}
-                            {{ $zone->name ? '- ' . $zone->name : '' }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label>Task Category</label>
+                <label>{{ $this->isFacility() ? 'Task' : 'Task Category' }}</label>
 
                 <select wire:model.live="taskCategoryId">
                     <option value="">
@@ -2257,32 +2567,53 @@ new class extends Component
                         <th>Work Plan</th>
                         <th>Task Group</th>
                         <th>Task</th>
-                        <th>Zone / Sub Zone</th>
-                        <th>Date</th>
-                        <th>Tractor</th>
-                        <th>Driver</th>
-                        <th>Hour</th>
-                        <th>{{ $this->workLogQtyLabel() }}</th>
-                        <th>Diesel Start</th>
-                        <th>Diesel Refill</th>
-                        <th>Diesel End</th>
-                        <th>Diesel Used</th>
-                        <th>{{ $this->workLogDieselRateLabel() }}</th>
-                        <th>{{ $this->workLogProductivityLabel() }}</th>
+
+                        @if($this->isFacility())
+                            <th>Equipment</th>
+                            <th>Location</th>
+                            <th>Date</th>
+                            <th>Consume L/H</th>
+                            <th>Total Hour</th>
+                            <th>Total Consume (L)</th>
+                        @else
+                            <th>Zone / Sub Zone</th>
+                            <th>Date</th>
+                            <th>Tractor</th>
+                            <th>Driver</th>
+                            <th>Hour</th>
+                            <th>{{ $this->workLogQtyLabel() }}</th>
+                            <th>Diesel Start</th>
+                            <th>Diesel Refill</th>
+                            <th>Diesel End</th>
+                            <th>Diesel Used</th>
+                            <th>{{ $this->workLogDieselRateLabel() }}</th>
+                            <th>{{ $this->workLogProductivityLabel() }}</th>
+                        @endif
+
                         <th>Action</th>
                     </tr>
                 </thead>
 
                 <tbody>
                     @forelse($logs as $log)
+                        @php
+                            $savedPlanTaskCategory =
+                                $log->workPlan?->activities->first()?->taskCategory
+                                ?? $log->workPlan?->taskCategory;
+
+                            $savedTaskGroupName =
+                                $savedPlanTaskCategory?->group?->name
+                                ?? $log->workPlan?->title
+                                ?? '-';
+
+                            $savedWorkPlanLabel = $log->workPlan
+                                ? $this->formatWorkPlanSelectLabel($log->workPlan)
+                                : 'No Plan';
+                        @endphp
+
                         @if((int) $editingId === (int) $log->id)
-                            <tr
-                                class="new-row"
-                                wire:key="edit-work-log-{{ $log->id }}"
-                            >
-                                <td class="row-no">
-                                    {{ $loop->iteration }}
-                                </td>
+                            <tr class="new-row" wire:key="edit-work-log-{{ $log->id }}">
+                                <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
                                     <select
@@ -2290,9 +2621,7 @@ new class extends Component
                                         wire:change="applyWorkPlanToEdit"
                                         class="work-plan-select"
                                     >
-                                        <option value="">
-                                            Select Work Plan
-                                        </option>
+                                        <option value="">Select Work Plan</option>
 
                                         @foreach($workPlans as $plan)
                                             <option value="{{ $plan->id }}">
@@ -2319,14 +2648,10 @@ new class extends Component
                                         <option value="">
                                             {{ empty($editRow['farm_work_plan_id'])
                                                 ? 'Select Work Plan first'
-                                                : 'Select Activity' }}
+                                                : 'Select Task' }}
                                         </option>
 
-                                        @foreach(
-                                            $this->getWorkPlanTaskCategories(
-                                                $editRow['farm_work_plan_id'] ?? null
-                                            ) as $taskCategory
-                                        )
+                                        @foreach($this->getWorkPlanTaskCategories($editRow['farm_work_plan_id'] ?? null) as $taskCategory)
                                             <option value="{{ $taskCategory->id }}">
                                                 {{ $taskCategory->name }}
                                             </option>
@@ -2334,319 +2659,269 @@ new class extends Component
                                     </select>
                                 </td>
 
-                                <td class="zone-combo">
-                                    <select
-                                        wire:model.live="editRow.zone_block_select"
-                                        wire:change="syncEditZoneSelection"
-                                        class="zone-block-select"
-                                        @disabled(empty($editRow['farm_work_plan_id']))
-                                    >
-                                        <option value="">
-                                            {{ empty($editRow['farm_work_plan_id'])
-                                                ? 'Select Work Plan first'
-                                                : 'Select Zone / Sub Zone' }}
-                                        </option>
+                                @if($this->isFacility())
+                                    <td>
+                                        <input
+                                            type="text"
+                                            class="task-group-readonly"
+                                            value="{{ $this->getMachineName($editRow['machine_id'] ?? null) }}"
+                                            readonly
+                                        >
+                                    </td>
 
-                                        @foreach(
-                                            $this->getWorkPlanZoneBlocks(
-                                                $editRow['farm_work_plan_id'] ?? null
-                                            ) as $block
-                                        )
-                                            <option value="{{ $block->id }}">
-                                                {{ $this->formatZoneBlockLabel($block) }}
+                                    <td>
+                                        <input
+                                            type="text"
+                                            class="task-group-readonly"
+                                            value="{{ $this->getLocationName($editRow['location_id'] ?? null) }}"
+                                            readonly
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <input type="date" wire:model.live="editRow.work_date">
+                                    </td>
+
+                                    <td>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            wire:model.live="editRow.consume_l_per_hour"
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            wire:model.live="editRow.working_duration"
+                                        >
+                                    </td>
+
+                                    @php
+                                        $calc = $this->calculateRow($editRow);
+                                    @endphp
+
+                                    <td>
+                                        <input
+                                                type="number"
+                                                step="0.01"
+                                                class="total-consume-input"
+                                                wire:model.live="editRow.total_consume_liter"
+                                            >
+                                    </td>
+                                @else
+                                    <td class="zone-combo">
+                                        <select
+                                            wire:model.live="editRow.zone_block_select"
+                                            wire:change="syncEditZoneSelection"
+                                            class="zone-block-select"
+                                            @disabled(empty($editRow['farm_work_plan_id']))
+                                        >
+                                            <option value="">
+                                                {{ empty($editRow['farm_work_plan_id'])
+                                                    ? 'Select Work Plan first'
+                                                    : 'Select Zone / Sub Zone' }}
                                             </option>
-                                        @endforeach
-                                    </select>
-                                </td>
 
-                                <td>
-                                    <input
-                                        type="date"
-                                        wire:model.live="editRow.work_date"
-                                    >
-                                </td>
+                                            @foreach($this->getWorkPlanZoneBlocks($editRow['farm_work_plan_id'] ?? null) as $block)
+                                                <option value="{{ $block->id }}">
+                                                    {{ $this->formatZoneBlockLabel($block) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
 
-                                <td>
-                                    <select wire:model.live="editRow.tractor_id">
-                                        <option value="">
-                                            Select Tractor
-                                        </option>
+                                    <td>
+                                        <input type="date" wire:model.live="editRow.work_date">
+                                    </td>
 
-                                        @foreach($tractors as $tractor)
-                                            <option value="{{ $tractor->id }}">
-                                                {{ $tractor->tractor_no }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                </td>
+                                    <td>
+                                        <select wire:model.live="editRow.tractor_id">
+                                            <option value="">Select Tractor</option>
 
-                                <td>
-                                    <select wire:model.live="editRow.driver_id">
-                                        <option value="">
-                                            Select Driver
-                                        </option>
+                                            @foreach($tractors as $tractor)
+                                                <option value="{{ $tractor->id }}">
+                                                    {{ $tractor->tractor_no }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
 
-                                        @foreach($drivers as $driver)
-                                            <option value="{{ $driver->id }}">
-                                                {{ $driver->name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                </td>
+                                    <td>
+                                        <select wire:model.live="editRow.driver_id">
+                                            <option value="">Select Driver</option>
 
-                                <td>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.working_duration"
-                                    >
-                                </td>
+                                            @foreach($drivers as $driver)
+                                                <option value="{{ $driver->id }}">
+                                                    {{ $driver->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
 
-                                <td>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.working_area"
-                                    >
-                                </td>
+                                    <td>
+                                        <input type="number" step="0.01" wire:model.live="editRow.working_duration">
+                                    </td>
 
-                                <td>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.diesel_start"
-                                    >
-                                </td>
+                                    <td>
+                                        <input type="number" step="0.01" wire:model.live="editRow.working_area">
+                                    </td>
 
-                                <td>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.diesel_refill"
-                                    >
-                                </td>
+                                    <td>
+                                        <input type="number" step="0.01" wire:model.live="editRow.diesel_start">
+                                    </td>
 
-                                <td>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.diesel_end"
-                                    >
-                                </td>
+                                    <td>
+                                        <input type="number" step="0.01" wire:model.live="editRow.diesel_refill">
+                                    </td>
 
-                                @php
-                                    $calc = $this->calculateRow($editRow);
-                                @endphp
+                                    <td>
+                                        <input type="number" step="0.01" wire:model.live="editRow.diesel_end">
+                                    </td>
 
-                                <td>
-                                    <strong>
-                                        {{ number_format(
-                                            (float) $calc['diesel_consumed'],
-                                            2
-                                        ) }}
-                                    </strong>
-                                </td>
+                                    @php
+                                        $calc = $this->calculateRow($editRow);
+                                    @endphp
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $calc['diesel_per_hectare'],
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        <strong>{{ number_format((float) $calc['diesel_consumed'], 2) }}</strong>
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $calc['hectare_per_hour'],
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $calc['diesel_per_hectare'], 2) }}
+                                    </td>
+
+                                    <td>
+                                        {{ number_format((float) $calc['hectare_per_hour'], 2) }}
+                                    </td>
+                                @endif
 
                                 <td>
                                     <div class="table-actions">
-                                        <button
-                                            type="button"
-                                            wire:click="updateRow"
-                                            class="mini"
-                                        >
-                                            Save
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            wire:click="cancelEdit"
-                                            class="mini danger"
-                                        >
-                                            Cancel
-                                        </button>
+                                        <button type="button" wire:click="updateRow" class="mini">Save</button>
+                                        <button type="button" wire:click="cancelEdit" class="mini danger">Cancel</button>
                                     </div>
                                 </td>
                             </tr>
                         @else
-                            @php
-                                $savedPlanTaskCategory =
-                                    $log->workPlan?->activities->first()?->taskCategory
-                                    ?? $log->workPlan?->taskCategory;
-
-                                $savedTaskGroupName =
-                                    $savedPlanTaskCategory?->group?->name
-                                    ?? $log->workPlan?->title
-                                    ?? '-';
-                            @endphp
-
                             <tr wire:key="work-log-{{ $log->id }}">
-                                <td class="row-no">
-                                    {{ $loop->iteration }}
-                                </td>
+                                <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
                                     @if($log->workPlan)
                                         <span class="work-plan-label">
-                                            {{ $savedTaskGroupName }}
-                                            |
-                                            {{ $log->taskCategory->name ?? '-' }}
-                                            |
-                                            @if($log->zoneBlock)
-                                                {{ $this->formatZoneBlockLabel($log->zoneBlock) }}
-                                            @else
-                                                {{ $log->zone->zone_code ?? '-' }}
-                                            @endif
+                                            {{ $savedWorkPlanLabel }}
                                         </span>
                                     @else
-                                        <span class="no-plan">
-                                            No Plan
-                                        </span>
+                                        <span class="no-plan">No Plan</span>
                                     @endif
                                 </td>
 
                                 <td>
-                                    <strong>
-                                        {{ $savedTaskGroupName }}
-                                    </strong>
+                                    <strong>{{ $savedTaskGroupName }}</strong>
                                 </td>
 
                                 <td>
                                     {{ $log->taskCategory->name ?? '-' }}
                                 </td>
 
-                                <td>
-                                    @if($log->zoneBlock)
-                                        <span class="zone-display">
-                                            {{ $this->formatZoneBlockLabel(
-                                                $log->zoneBlock
-                                            ) }}
-                                        </span>
+                                @if($this->isFacility())
+                                    <td>{{ $log->machine?->name ?? $log->workPlan?->machine?->name ?? '-' }}</td>
+                                    <td>{{ $log->location?->name ?? $log->workPlan?->location?->name ?? '-' }}</td>
 
-                                        @if($log->zoneBlock->name)
-                                            <span class="sub-zone-display">
-                                                {{ $log->zoneBlock->name }}
+                                    <td>
+                                        {{ optional($log->work_date)->format('d M Y') ?: $log->work_date }}
+                                    </td>
+
+                                    <td>
+                                        {{ number_format((float) $log->diesel_per_hectare, 2) }}
+                                    </td>
+
+                                    <td>
+                                        {{ number_format((float) $log->working_duration, 2) }}
+                                    </td>
+
+                                    <td>
+                                        <strong>{{ number_format((float) $log->diesel_consumed, 2) }}</strong>
+                                    </td>
+                                @else
+                                    <td>
+                                        @if($log->zoneBlock)
+                                            <span class="zone-display">
+                                                {{ $this->formatZoneBlockLabel($log->zoneBlock) }}
+                                            </span>
+
+                                            @if($log->zoneBlock->name)
+                                                <span class="sub-zone-display">
+                                                    {{ $log->zoneBlock->name }}
+                                                </span>
+                                            @endif
+                                        @else
+                                            <span class="zone-display">
+                                                {{ $log->zone->zone_code ?? '-' }}
+                                            </span>
+
+                                            <span class="sub-zone-display" style="color: #94a3b8;">
+                                                No sub zone
                                             </span>
                                         @endif
-                                    @else
-                                        <span class="zone-display">
-                                            {{ $log->zone->zone_code ?? '-' }}
-                                        </span>
+                                    </td>
 
-                                        <span
-                                            class="sub-zone-display"
-                                            style="color: #94a3b8;"
-                                        >
-                                            No sub zone
-                                        </span>
-                                    @endif
-                                </td>
+                                    <td>
+                                        {{ optional($log->work_date)->format('d M Y') ?: $log->work_date }}
+                                    </td>
 
-                                <td>
-                                    {{ optional($log->work_date)->format('d M Y')
-                                        ?: $log->work_date }}
-                                </td>
+                                    <td>
+                                        {{ $log->tractor->tractor_no ?? '-' }}
+                                    </td>
 
-                                <td>
-                                    {{ $log->tractor->tractor_no ?? '-' }}
-                                </td>
+                                    <td>
+                                        {{ $log->driver->name ?? '-' }}
+                                    </td>
 
-                                <td>
-                                    {{ $log->driver->name ?? '-' }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->working_duration, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->working_duration,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->working_area, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->working_area,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->diesel_start, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->diesel_start,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->diesel_refill, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->diesel_refill,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->diesel_end, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->diesel_end,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        <strong>{{ number_format((float) $log->diesel_consumed, 2) }}</strong>
+                                    </td>
 
-                                <td>
-                                    <strong>
-                                        {{ number_format(
-                                            (float) $log->diesel_consumed,
-                                            2
-                                        ) }}
-                                    </strong>
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->diesel_per_hectare, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->diesel_per_hectare,
-                                        2
-                                    ) }}
-                                </td>
-
-                                <td>
-                                    {{ number_format(
-                                        (float) $log->hectare_per_hour,
-                                        2
-                                    ) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $log->hectare_per_hour, 2) }}
+                                    </td>
+                                @endif
 
                                 <td>
                                     <div class="table-actions">
-                                        @if(
-                                            auth()
-                                                ->user()
-                                                ->hasPermission('work_logs.edit')
-                                        )
-                                            <button
-                                                type="button"
-                                                wire:click="edit({{ $log->id }})"
-                                                class="mini"
-                                            >
+                                        @if(auth()->user()->hasPermission('work_logs.edit'))
+                                            <button type="button" wire:click="edit({{ $log->id }})" class="mini">
                                                 Edit
                                             </button>
                                         @endif
 
-                                        @if(
-                                            auth()
-                                                ->user()
-                                                ->hasPermission('work_logs.delete')
-                                        )
+                                        @if(auth()->user()->hasPermission('work_logs.delete'))
                                             <button
                                                 type="button"
                                                 wire:click="delete({{ $log->id }})"
@@ -2662,20 +2937,14 @@ new class extends Component
                         @endif
                     @empty
                         <tr>
-                            <td
-                                colspan="17"
-                                class="empty"
-                            >
+                            <td colspan="{{ $this->isFacility() ? 11 : 17 }}" class="empty">
                                 No work log found.
                             </td>
                         </tr>
                     @endforelse
 
                     @foreach($rows as $index => $row)
-                        <tr
-                            class="new-row"
-                            wire:key="new-work-log-{{ $index }}"
-                        >
+                        <tr class="new-row" wire:key="new-work-log-{{ $index }}">
                             <td class="row-no">
                                 <button
                                     type="button"
@@ -2692,9 +2961,7 @@ new class extends Component
                                     wire:change="applyWorkPlanToRow({{ $index }})"
                                     class="work-plan-select"
                                 >
-                                    <option value="">
-                                        Select Work Plan
-                                    </option>
+                                    <option value="">Select Work Plan</option>
 
                                     @foreach($workPlans as $plan)
                                         <option value="{{ $plan->id }}">
@@ -2721,14 +2988,10 @@ new class extends Component
                                     <option value="">
                                         {{ empty($row['farm_work_plan_id'])
                                             ? 'Select Work Plan first'
-                                            : 'Select Activity' }}
+                                            : 'Select Task' }}
                                     </option>
 
-                                    @foreach(
-                                        $this->getWorkPlanTaskCategories(
-                                            $row['farm_work_plan_id'] ?? null
-                                        ) as $taskCategory
-                                    )
+                                    @foreach($this->getWorkPlanTaskCategories($row['farm_work_plan_id'] ?? null) as $taskCategory)
                                         <option value="{{ $taskCategory->id }}">
                                             {{ $taskCategory->name }}
                                         </option>
@@ -2736,152 +2999,152 @@ new class extends Component
                                 </select>
                             </td>
 
-                            <td class="zone-combo">
-                                <select
-                                    wire:model.live="rows.{{ $index }}.zone_block_select"
-                                    wire:change="syncZoneSelection({{ $index }})"
-                                    class="zone-block-select"
-                                    @disabled(empty($row['farm_work_plan_id']))
-                                >
-                                    <option value="">
-                                        {{ empty($row['farm_work_plan_id'])
-                                            ? 'Select Work Plan first'
-                                            : 'Select Zone / Sub Zone' }}
-                                    </option>
+                            @if($this->isFacility())
+                                <td>
+                                    <input
+                                        type="text"
+                                        class="task-group-readonly"
+                                        value="{{ $this->getMachineName($row['machine_id'] ?? null) }}"
+                                        readonly
+                                    >
+                                </td>
 
-                                    @foreach(
-                                        $this->getWorkPlanZoneBlocks(
-                                            $row['farm_work_plan_id'] ?? null
-                                        ) as $block
-                                    )
-                                        <option value="{{ $block->id }}">
-                                            {{ $this->formatZoneBlockLabel($block) }}
+                                <td>
+                                    <input
+                                        type="text"
+                                        class="task-group-readonly"
+                                        value="{{ $this->getLocationName($row['location_id'] ?? null) }}"
+                                        readonly
+                                    >
+                                </td>
+
+                                <td>
+                                    <input type="date" wire:model.live="rows.{{ $index }}.work_date">
+                                </td>
+
+                                <td>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        wire:model.live="rows.{{ $index }}.consume_l_per_hour"
+                                    >
+                                </td>
+
+                                <td>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        wire:model.live="rows.{{ $index }}.working_duration"
+                                    >
+                                </td>
+
+                                @php
+                                    $calc = $this->calculateRow($row);
+                                @endphp
+
+                                <td>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        class="total-consume-input"
+                                        wire:model.live="rows.{{ $index }}.total_consume_liter"
+                                        placeholder="{{ number_format((float) $calc['diesel_consumed'], 2) }}"
+                                    >
+                                </td>
+                            @else
+                                <td class="zone-combo">
+                                    <select
+                                        wire:model.live="rows.{{ $index }}.zone_block_select"
+                                        wire:change="syncZoneSelection({{ $index }})"
+                                        class="zone-block-select"
+                                        @disabled(empty($row['farm_work_plan_id']))
+                                    >
+                                        <option value="">
+                                            {{ empty($row['farm_work_plan_id'])
+                                                ? 'Select Work Plan first'
+                                                : 'Select Zone / Sub Zone' }}
                                         </option>
-                                    @endforeach
-                                </select>
-                            </td>
 
-                            <td>
-                                <input
-                                    type="date"
-                                    wire:model.live="rows.{{ $index }}.work_date"
-                                >
-                            </td>
+                                        @foreach($this->getWorkPlanZoneBlocks($row['farm_work_plan_id'] ?? null) as $block)
+                                            <option value="{{ $block->id }}">
+                                                {{ $this->formatZoneBlockLabel($block) }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
-                            <td>
-                                <select
-                                    wire:model.live="rows.{{ $index }}.tractor_id"
-                                >
-                                    <option value="">
-                                        Select Tractor
-                                    </option>
+                                <td>
+                                    <input type="date" wire:model.live="rows.{{ $index }}.work_date">
+                                </td>
 
-                                    @foreach($tractors as $tractor)
-                                        <option value="{{ $tractor->id }}">
-                                            {{ $tractor->tractor_no }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </td>
+                                <td>
+                                    <select wire:model.live="rows.{{ $index }}.tractor_id">
+                                        <option value="">Select Tractor</option>
 
-                            <td>
-                                <select
-                                    wire:model.live="rows.{{ $index }}.driver_id"
-                                >
-                                    <option value="">
-                                        Select Driver
-                                    </option>
+                                        @foreach($tractors as $tractor)
+                                            <option value="{{ $tractor->id }}">
+                                                {{ $tractor->tractor_no }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
-                                    @foreach($drivers as $driver)
-                                        <option value="{{ $driver->id }}">
-                                            {{ $driver->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </td>
+                                <td>
+                                    <select wire:model.live="rows.{{ $index }}.driver_id">
+                                        <option value="">Select Driver</option>
 
-                            <td>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.working_duration"
-                                >
-                            </td>
+                                        @foreach($drivers as $driver)
+                                            <option value="{{ $driver->id }}">
+                                                {{ $driver->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
-                            <td>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.working_area"
-                                >
-                            </td>
+                                <td>
+                                    <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.working_duration">
+                                </td>
 
-                            <td>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.diesel_start"
-                                >
-                            </td>
+                                <td>
+                                    <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.working_area">
+                                </td>
 
-                            <td>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.diesel_refill"
-                                >
-                            </td>
+                                <td>
+                                    <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_start">
+                                </td>
 
-                            <td>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.diesel_end"
-                                >
-                            </td>
+                                <td>
+                                    <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_refill">
+                                </td>
 
-                            @php
-                                $calc = $this->calculateRow($row);
-                            @endphp
+                                <td>
+                                    <input type="number" step="0.01" wire:model.live="rows.{{ $index }}.diesel_end">
+                                </td>
 
-                            <td>
-                                <strong>
-                                    {{ number_format(
-                                        (float) $calc['diesel_consumed'],
-                                        2
-                                    ) }}
-                                </strong>
-                            </td>
+                                @php
+                                    $calc = $this->calculateRow($row);
+                                @endphp
 
-                            <td>
-                                {{ number_format(
-                                    (float) $calc['diesel_per_hectare'],
-                                    2
-                                ) }}
-                            </td>
+                                <td>
+                                    <strong>{{ number_format((float) $calc['diesel_consumed'], 2) }}</strong>
+                                </td>
 
-                            <td>
-                                {{ number_format(
-                                    (float) $calc['hectare_per_hour'],
-                                    2
-                                ) }}
-                            </td>
+                                <td>
+                                    {{ number_format((float) $calc['diesel_per_hectare'], 2) }}
+                                </td>
+
+                                <td>
+                                    {{ number_format((float) $calc['hectare_per_hour'], 2) }}
+                                </td>
+                            @endif
 
                             <td>
                                 <div class="table-actions">
-                                    <button
-                                        type="button"
-                                        wire:click="saveRow({{ $index }})"
-                                        class="mini"
-                                    >
+                                    <button type="button" wire:click="saveRow({{ $index }})" class="mini">
                                         Save
                                     </button>
 
-                                    <button
-                                        type="button"
-                                        wire:click="removeRow({{ $index }})"
-                                        class="mini danger"
-                                    >
+                                    <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">
                                         Remove
                                     </button>
                                 </div>
@@ -2893,11 +3156,7 @@ new class extends Component
                 <tfoot>
                     <tr class="total-row">
                         <td>
-                            @if(
-                                auth()
-                                    ->user()
-                                    ->hasPermission('work_logs.create')
-                            )
+                            @if(auth()->user()->hasPermission('work_logs.create'))
                                 <button
                                     type="button"
                                     wire:click="addRow"
@@ -2910,60 +3169,55 @@ new class extends Component
                             @endif
                         </td>
 
-                        <td
-                            colspan="7"
-                            style="text-align: right;"
-                        >
-                            Total
-                        </td>
+                        @if($this->isFacility())
+                            <td colspan="6" style="text-align: right;">Total</td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->totalHours,
-                                2
-                            ) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalConsumePerHour + (float) $this->draftFacilityTotals['consume_l_per_hour'], 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->totalArea,
-                                2
-                            ) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalHours + (float) $this->draftFacilityTotals['total_hour'], 2) }}
+                            </td>
 
-                        <td>-</td>
+                            <td>
+                                {{ number_format((float) $this->totalDieselUsed + (float) $this->draftFacilityTotals['total_consume_liter'], 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->totalDieselRefill,
-                                2
-                            ) }}
-                        </td>
+                            <td>-</td>
+                        @else
+                            <td colspan="7" style="text-align: right;">Total</td>
 
-                        <td>-</td>
+                            <td>
+                                {{ number_format((float) $this->totalHours, 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->totalDieselUsed,
-                                2
-                            ) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalArea, 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->avgLiterPerHa,
-                                2
-                            ) }}
-                        </td>
+                            <td>-</td>
 
-                        <td>
-                            {{ number_format(
-                                (float) $this->avgHaPerHr,
-                                2
-                            ) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalDieselRefill, 2) }}
+                            </td>
 
-                        <td>-</td>
+                            <td>-</td>
+
+                            <td>
+                                {{ number_format((float) $this->totalDieselUsed, 2) }}
+                            </td>
+
+                            <td>
+                                {{ number_format((float) $this->avgLiterPerHa, 2) }}
+                            </td>
+
+                            <td>
+                                {{ number_format((float) $this->avgHaPerHr, 2) }}
+                            </td>
+
+                            <td>-</td>
+                        @endif
                     </tr>
                 </tfoot>
             </table>

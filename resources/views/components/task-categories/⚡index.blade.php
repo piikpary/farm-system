@@ -97,7 +97,7 @@ new class extends Component
         }
 
         $this->validate([
-            "rows.$index.group_type" => 'required|in:planning,harvesting',
+            "rows.$index.group_type" => 'required|in:planning,harvesting,facility',
             "rows.$index.task_category_group_id" => [
                 'required',
                 Rule::exists('task_category_groups', 'id')->where(
@@ -178,7 +178,7 @@ new class extends Component
         $taskCategory = TaskCategory::findOrFail($this->editingId);
 
         $this->validate([
-            'editRow.group_type' => 'required|in:planning,harvesting',
+            'editRow.group_type' => 'required|in:planning,harvesting,facility',
             'editRow.task_category_group_id' => [
                 'required',
                 Rule::exists('task_category_groups', 'id')->where(
@@ -224,7 +224,7 @@ new class extends Component
     public function getTaskCategoryGroupsProperty()
     {
         return TaskCategoryGroup::query()
-            ->orderByRaw("FIELD(group_type, 'planning', 'harvesting')")
+            ->orderByRaw("FIELD(group_type, 'planning', 'harvesting', 'facility')")
             ->orderBy('name')
             ->get();
     }
@@ -236,10 +236,14 @@ new class extends Component
             ->values();
     }
 
-    public function typeLabel($type): string
-    {
-        return $type === 'harvesting' ? 'Harvesting' : 'Planting';
-    }
+        public function typeLabel($type): string
+            {
+                return [
+                    'planning' => 'Planting',
+                    'harvesting' => 'Harvesting',
+                    'facility' => 'Facility',
+                ][$type] ?? 'Planting';
+            }
 
     public function taskCategoriesQuery()
     {
@@ -511,6 +515,7 @@ new class extends Component
                                     <select wire:model.live="editRow.group_type">
                                         <option value="planning">Planting</option>
                                         <option value="harvesting">Harvesting</option>
+                                        <option value="facility">Facility</option>
                                     </select>
 
                                     @error('editRow.group_type')
@@ -652,6 +657,7 @@ new class extends Component
                                 <select wire:model.live="rows.{{ $index }}.group_type">
                                     <option value="planning">Planting</option>
                                     <option value="harvesting">Harvesting</option>
+                                    <option value="facility">Facility</option>
                                 </select>
 
                                 @error("rows.$index.group_type")

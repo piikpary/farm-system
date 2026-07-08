@@ -21,6 +21,11 @@ class FarmWorkPlan extends Model
         'request_liters',
         'status',
         'note',
+        'machine_id',
+        'location_id',
+        'requested_l_per_hour',
+        'total_hour',
+        'total_liter',
         'created_by',
         'updated_by',
     ];
@@ -42,6 +47,15 @@ class FarmWorkPlan extends Model
     public function workLogs()
     {
         return $this->hasMany(FarmWorkLog::class, 'farm_work_plan_id');
+    }
+    public function machine()
+    {
+        return $this->belongsTo(\App\Models\Machine::class);
+    }
+
+    public function location()
+    {
+        return $this->belongsTo(\App\Models\Location::class);
     }
     public function activities()
 {

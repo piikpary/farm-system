@@ -289,7 +289,11 @@
 
                                 <td>
                                     <span class="group-display-{{ $group->id }}">
-                                        {{ ($group->group_type ?? 'planning') === 'harvesting' ? 'Harvesting' : 'Planting' }}
+                                        {{ [
+                                            'planning' => 'Planting',
+                                            'harvesting' => 'Harvesting',
+                                            'facility' => 'Facility',
+                                        ][$group->group_type ?? 'planning'] ?? 'Planting' }}
                                     </span>
 
                                     <select
@@ -311,6 +315,12 @@
                                         >
                                             Harvesting
                                         </option>
+                                        <option
+                                                value="facility"
+                                                @selected(($group->group_type ?? 'planning') === 'facility')
+                                            >
+                                                Facility
+                                            </option>
                                     </select>
                                 </td>
 
@@ -466,6 +476,12 @@
                                         @selected(old('group_type') === 'harvesting')
                                     >
                                         Harvesting
+                                    </option>
+                                    <option
+                                        value="facility"
+                                        @selected(old('group_type') === 'facility')
+                                    >
+                                        Facility
                                     </option>
                                 </select>
 

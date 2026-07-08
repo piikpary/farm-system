@@ -36,6 +36,11 @@ class FarmWorkLog extends Model
     'request_fuel',
     'variance_fuel',
     'note',
+    'machine_id',
+    'location_id',
+    'consume_l_per_hour',
+    'total_hour',
+    'total_consume_liter',
     'created_by',
     'updated_by',
 ];
@@ -98,7 +103,16 @@ protected $casts = [
     {
         return $this->hasMany(DriverWorkAction::class);
     }
-    
+    public function machine()
+    {
+        return $this->belongsTo(\App\Models\Machine::class);
+    }
+
+    public function location()
+    {
+        return $this->belongsTo(\App\Models\Location::class);
+    }
+        
     protected static function booted()
 {
     static::creating(function ($log) {

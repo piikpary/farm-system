@@ -9,6 +9,8 @@
     $showZoneBlocks = $sidebarSettings['zone_blocks'] ?? true;
     $showTaskCategories = $sidebarSettings['task_categories'] ?? false;
     $showPlantingCycleTypes = $sidebarSettings['planting_cycle_types'] ?? true;
+    $showLocations = $sidebarSettings['locations'] ?? true;
+    $showMachines = $sidebarSettings['machines'] ?? true;
 
     $showWorkPlans = $sidebarSettings['work_plans'] ?? true;
     $showBlockRegisters = $sidebarSettings['block_registers'] ?? true;
@@ -55,6 +57,8 @@
         ($showDrivers && $user->hasPermission('drivers.view')) ||
         ($showZones && $user->hasPermission('zones.view')) ||
         ($showZoneBlocks && $user->hasPermission('zone_blocks.view')) ||
+        ($showLocations && $user->hasPermission('locations.view')) ||
+        ($showMachines && $user->hasPermission('machines.view')) ||
         ($showTaskCategories && $user->hasPermission('task_categories.view')) ||
         ($showPlantingCycleTypes && $user->hasPermission('planting_cycle_types.view'))
     );
@@ -78,6 +82,8 @@
         request()->routeIs('drivers.*') ||
         request()->routeIs('zones.*') ||
         request()->routeIs('zone-blocks.*') ||
+        request()->routeIs('locations.*') ||
+        request()->routeIs('machines.*') ||
         request()->routeIs('task-categories.*') ||
         request()->routeIs('task-category-groups.*') ||
         request()->routeIs('planting-cycle-types.*');
@@ -282,7 +288,11 @@
         $harvestingActive = request()->routeIs('farm-work-plans.*')
             && $activeWorkPlanType === 'harvesting';
 
+            $facilityActive = request()->routeIs('farm-work-plans.*')
+                && $activeWorkPlanType === 'facility';
+                
         $workPlansOpen = request()->routeIs('farm-work-plans.*');
+
     @endphp
 
     <details
@@ -314,6 +324,13 @@
                 <span class="farm-menu-icon">🌾</span>
                 <span>Harvesting</span>
             </a>
+
+            <a href="{{ route('farm-work-plans.index', ['workPlanType' => 'facility']) }}"
+               class="farm-menu-link {{ $facilityActive ? 'active' : '' }}"
+               title="Facility Work Plans">
+                <span class="farm-menu-icon">🏭</span>
+                <span>Facility</span>
+            </a>
         </div>
     </details>
 @endif
@@ -328,6 +345,8 @@
         $harvestingWorkLogActive = request()->routeIs('farm-work-logs.*')
             && $activeWorkLogType === 'harvesting';
 
+            $facilityWorkLogActive = request()->routeIs('farm-work-logs.*')
+                && $activeWorkLogType === 'facility';
         $workLogsOpen = request()->routeIs('farm-work-logs.*');
     @endphp
 
@@ -360,6 +379,12 @@
                 <span class="farm-menu-icon">🌾</span>
                 <span>Harvesting</span>
             </a>
+            <a href="{{ route('farm-work-logs.index', ['workLogType' => 'facility']) }}"
+                class="farm-menu-link {{ $facilityWorkLogActive ? 'active' : '' }}"
+                title="Facility Work Logs">
+                    <span class="farm-menu-icon">🏗️</span>
+                    <span>Facility</span>
+                </a>
         </div>
     </details>
 @endif
@@ -535,6 +560,24 @@
                            title="{{ __('sidebar.zone_blocks') }}">
                             <span class="farm-menu-icon">🧩</span>
                             <span>{{ __('sidebar.zone_blocks') }}</span>
+                        </a>
+                    @endif
+
+                    @if($showLocations)
+                        <a href="{{ route('locations.index') }}"
+                        class="farm-menu-link {{ request()->routeIs('locations.*') ? 'active' : '' }}"
+                        title="Location">
+                            <span class="farm-menu-icon">📍</span>
+                            <span>Location</span>
+                        </a>
+                    @endif
+
+                    @if($showMachines)
+                        <a href="{{ route('machines.index') }}"
+                        class="farm-menu-link {{ request()->routeIs('machines.*') ? 'active' : '' }}"
+                        title="Machine">
+                            <span class="farm-menu-icon">⚙️</span>
+                            <span>Machine</span>
                         </a>
                     @endif
 

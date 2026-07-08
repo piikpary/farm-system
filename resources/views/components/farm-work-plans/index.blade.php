@@ -12,6 +12,8 @@ use Illuminate\Validation\Rule;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use App\Models\BlockRegister;
+use App\Models\Machine;
+use App\Models\Location;
 
 new class extends Component
 {
@@ -50,6 +52,8 @@ new class extends Component
         'plan_start' => '',
         'plan_end' => '',
         'zone_block_ids' => [],
+        'machine_id' => '',
+        'location_id' => '',
         'plan_area' => '',
         'request_l_per_hectare' => '',
         'request_liters' => '',
@@ -68,7 +72,7 @@ new class extends Component
 
     public function mount()
     {
-        if (!in_array($this->workPlanType, ['planning', 'harvesting'], true)) {
+        if (!in_array($this->workPlanType, ['planning', 'harvesting', 'facility'], true)) {
             $this->workPlanType = 'planning';
         }
     }
@@ -79,7 +83,7 @@ new class extends Component
 
     public function updatedWorkPlanType()
     {
-        if (!in_array($this->workPlanType, ['planning', 'harvesting'], true)) {
+        if (!in_array($this->workPlanType, ['planning', 'harvesting', 'facility'], true)) {
             $this->workPlanType = 'planning';
         }
 
@@ -95,65 +99,88 @@ new class extends Component
 
     public function workPlanTypeLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Harvesting'
-            : 'Planting';
+        return [
+            'planning' => 'Planting',
+            'harvesting' => 'Harvesting',
+            'facility' => 'Facility',
+        ][$this->workPlanType] ?? 'Planting';
+    }
+
+    public function isFacility(): bool
+    {
+        return $this->workPlanType === 'facility';
     }
 
     public function workPlanQtyLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Plan Tons'
-            : __('pages.plan_area_ha');
+        return match ($this->workPlanType) {
+            'harvesting' => 'Plan Tons',
+            'facility' => 'Total Hour',
+            default => __('pages.plan_area_ha'),
+        };
     }
 
     public function workPlanRateLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Request L/T'
-            : __('pages.request_l_ha');
+        return match ($this->workPlanType) {
+            'harvesting' => 'Request L/T',
+            'facility' => 'Requested L/H',
+            default => __('pages.request_l_ha'),
+        };
     }
 
     public function workPlanQtyUnitLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'T'
-            : 'Ha';
+        return match ($this->workPlanType) {
+            'harvesting' => 'T',
+            'facility' => 'Hr',
+            default => 'Ha',
+        };
     }
 
     public function workPlanRateUnitLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'L/T'
-            : 'L/Ha';
+        return match ($this->workPlanType) {
+            'harvesting' => 'L/T',
+            'facility' => 'L/H',
+            default => 'L/Ha',
+        };
     }
 
     public function workPlanActivityQtyLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Qty (T)'
-            : 'Zone Area (Ha)';
+        return match ($this->workPlanType) {
+            'harvesting' => 'Qty (T)',
+            'facility' => 'Total Hour',
+            default => 'Zone Area (Ha)',
+        };
     }
 
     public function workPlanActivityRateLabel(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Fuel L/T'
-            : 'Fuel L/Ha';
+        return match ($this->workPlanType) {
+            'harvesting' => 'Fuel L/T',
+            'facility' => 'Requested L/H',
+            default => 'Fuel L/Ha',
+        };
     }
 
     public function workPlanFooterQtyTitle(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Plan Qty'
-            : 'Zone Area';
+        return match ($this->workPlanType) {
+            'harvesting' => 'Plan Qty',
+            'facility' => 'Total Hour',
+            default => 'Zone Area',
+        };
     }
 
     public function workPlanFooterRateTitle(): string
     {
-        return $this->workPlanType === 'harvesting'
-            ? 'Total Fuel/T'
-            : 'Total Fuel/Ha';
+        return match ($this->workPlanType) {
+            'harvesting' => 'Total Fuel/T',
+            'facility' => 'Requested L/H',
+            default => 'Total Fuel/Ha',
+        };
     }
 
     public function addRow()
@@ -170,6 +197,8 @@ new class extends Component
             'plan_start' => '',
             'plan_end' => '',
             'zone_block_ids' => [],
+            'machine_id' => '',
+            'location_id' => '',
             'plan_area' => '',
             'request_l_per_hectare' => '',
             'request_liters' => '',
@@ -718,8 +747,16 @@ new class extends Component
             "rows.$index.plan_date" => 'required|date',
             "rows.$index.plan_start" => 'nullable|date',
             "rows.$index.plan_end" => 'nullable|date|after_or_equal:rows.' . $index . '.plan_start',
-            "rows.$index.zone_block_ids" => 'required|array|min:1',
+            "rows.$index.zone_block_ids" => $this->isFacility()
+                ? 'nullable|array'
+                : 'required|array|min:1',
             "rows.$index.zone_block_ids.*" => 'exists:zone_blocks,id',
+            "rows.$index.machine_id" => $this->isFacility()
+                ? 'required|exists:machines,id'
+                : 'nullable',
+            "rows.$index.location_id" => $this->isFacility()
+                ? 'required|exists:locations,id'
+                : 'nullable',
             "rows.$index.plan_area" => 'required|numeric|min:0',
             "rows.$index.request_l_per_hectare" => 'required|numeric|min:0',
             "rows.$index.request_liters" => 'required|numeric|min:0',
@@ -734,7 +771,9 @@ new class extends Component
                     )
                 ),
             ],
-            "rows.$index.activities.*.fuel_per_hectare" => 'required|numeric|min:0',
+            "rows.$index.activities.*.fuel_per_hectare" => $this->isFacility()
+                ? 'nullable|numeric|min:0'
+                : 'required|numeric|min:0',
             "rows.$index.note" => 'nullable|string|max:2000',
         ]);
 
@@ -779,7 +818,9 @@ new class extends Component
                 'task_category_id' => null,
                 'plan_start' => filled($row['plan_start'] ?? null) ? $row['plan_start'] : null,
                 'plan_end' => filled($row['plan_end'] ?? null) ? $row['plan_end'] : null,
-                'zone_block_ids' => $zoneBlockIds,
+                'zone_block_ids' => $this->isFacility() ? [] : $zoneBlockIds,
+                'machine_id' => $this->isFacility() ? ($row['machine_id'] ?? null) : null,
+                'location_id' => $this->isFacility() ? ($row['location_id'] ?? null) : null,
                 'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
@@ -792,7 +833,9 @@ new class extends Component
             foreach (($row['activities'] ?? []) as $activity) {
                 $plan->activities()->create([
                     'task_category_id' => (int) $activity['task_category_id'],
-                    'fuel_per_hectare' => (float) $activity['fuel_per_hectare'],
+                    'fuel_per_hectare' => $this->isFacility()
+                        ? $totalFuelPerHectare
+                        : (float) $activity['fuel_per_hectare'],
                 ]);
             }
         });
@@ -862,6 +905,8 @@ new class extends Component
             'plan_start' => optional($plan->plan_start)->format('Y-m-d') ?: $plan->plan_start,
             'plan_end' => optional($plan->plan_end)->format('Y-m-d') ?: $plan->plan_end,
             'zone_block_ids' => $plan->zone_block_ids ?: [],
+            'machine_id' => $plan->machine_id,
+            'location_id' => $plan->location_id,
             'plan_area' => $plan->plan_area,
             'request_l_per_hectare' => $plan->request_l_per_hectare,
             'request_liters' => $plan->request_liters,
@@ -883,6 +928,8 @@ new class extends Component
             'plan_start' => '',
             'plan_end' => '',
             'zone_block_ids' => [],
+            'machine_id' => '',
+            'location_id' => '',
             'plan_area' => '',
             'request_l_per_hectare' => '',
             'request_liters' => '',
@@ -917,8 +964,16 @@ new class extends Component
             'editRow.plan_date' => 'required|date',
             'editRow.plan_start' => 'nullable|date',
             'editRow.plan_end' => 'nullable|date|after_or_equal:editRow.plan_start',
-            'editRow.zone_block_ids' => 'required|array|min:1',
+            'editRow.zone_block_ids' => $this->isFacility()
+                ? 'nullable|array'
+                : 'required|array|min:1',
             'editRow.zone_block_ids.*' => 'exists:zone_blocks,id',
+            'editRow.machine_id' => $this->isFacility()
+                ? 'required|exists:machines,id'
+                : 'nullable',
+            'editRow.location_id' => $this->isFacility()
+                ? 'required|exists:locations,id'
+                : 'nullable',
             'editRow.plan_area' => 'required|numeric|min:0',
             'editRow.request_l_per_hectare' => 'required|numeric|min:0',
             'editRow.request_liters' => 'required|numeric|min:0',
@@ -933,7 +988,9 @@ new class extends Component
                     )
                 ),
             ],
-            'editRow.activities.*.fuel_per_hectare' => 'required|numeric|min:0',
+            'editRow.activities.*.fuel_per_hectare' => $this->isFacility()
+                ? 'nullable|numeric|min:0'
+                : 'required|numeric|min:0',
             'editRow.note' => 'nullable|string|max:2000',
         ]);
 
@@ -980,7 +1037,9 @@ new class extends Component
                 'plan_end' => filled($this->editRow['plan_end'] ?? null)
                     ? $this->editRow['plan_end']
                     : null,
-                'zone_block_ids' => $zoneBlockIds,
+                'zone_block_ids' => $this->isFacility() ? [] : $zoneBlockIds,
+                'machine_id' => $this->isFacility() ? ($this->editRow['machine_id'] ?? null) : null,
+                'location_id' => $this->isFacility() ? ($this->editRow['location_id'] ?? null) : null,
                 'plan_area' => $planArea,
                 'request_l_per_hectare' => $totalFuelPerHectare,
                 'request_liters' => $requestLiters,
@@ -995,7 +1054,9 @@ new class extends Component
             foreach ($this->editRow['activities'] as $activity) {
                 $plan->activities()->create([
                     'task_category_id' => (int) $activity['task_category_id'],
-                    'fuel_per_hectare' => (float) $activity['fuel_per_hectare'],
+                    'fuel_per_hectare' => $this->isFacility()
+                        ? $totalFuelPerHectare
+                        : (float) $activity['fuel_per_hectare'],
                 ]);
             }
         });
@@ -1048,6 +1109,8 @@ new class extends Component
         return FarmWorkPlan::with([
             'taskCategory.group',
             'activities.taskCategory.group',
+            'machine',
+            'location',
         ])
             ->withCount('workLogs')
             ->where(function ($query) {
@@ -1093,6 +1156,17 @@ new class extends Component
                                 ->orWhereHas('group', function ($groupQuery) use ($search) {
                                     $groupQuery->where('name', 'like', '%' . $search . '%');
                                 });
+                        })
+                        ->orWhereHas('machine', function ($machineQuery) use ($search) {
+                            $machineQuery
+                                ->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('machine_no', 'like', '%' . $search . '%')
+                                ->orWhere('brand', 'like', '%' . $search . '%');
+                        })
+                        ->orWhereHas('location', function ($locationQuery) use ($search) {
+                            $locationQuery
+                                ->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('description', 'like', '%' . $search . '%');
                         });
 
                     foreach ($matchingBlockIds as $blockId) {
@@ -1165,20 +1239,35 @@ new class extends Component
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle(__('pages.farm_work_plans'));
 
-        $headers = [
-            'A1' => __('pages.plan_date'),
-            'B1' => trans()->has('pages.task_group')
-                ? __('pages.task_group')
-                : 'Task Group',
-            'C1' => __('pages.activity'),
-            'D1' => __('pages.plan_start'),
-            'E1' => __('pages.plan_end'),
-            'F1' => __('pages.zone_block'),
-            'G1' => $this->workPlanQtyLabel(),
-            'H1' => $this->workPlanRateLabel(),
-            'I1' => __('pages.request_l'),
-            'J1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
-        ];
+        $headers = $this->isFacility()
+            ? [
+                'A1' => __('pages.plan_date'),
+                'B1' => trans()->has('pages.task_group')
+                    ? __('pages.task_group')
+                    : 'Task Group',
+                'C1' => __('pages.activity'),
+                'D1' => 'Equipment',
+                'E1' => 'Location',
+                'F1' => 'Requested L/H',
+                'G1' => 'Total Hour',
+                'H1' => 'Total L',
+                'I1' => 'Work Logs',
+                'J1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
+            ]
+            : [
+                'A1' => __('pages.plan_date'),
+                'B1' => trans()->has('pages.task_group')
+                    ? __('pages.task_group')
+                    : 'Task Group',
+                'C1' => __('pages.activity'),
+                'D1' => __('pages.plan_start'),
+                'E1' => __('pages.plan_end'),
+                'F1' => __('pages.zone_block'),
+                'G1' => $this->workPlanQtyLabel(),
+                'H1' => $this->workPlanRateLabel(),
+                'I1' => __('pages.request_l'),
+                'J1' => trans()->has('pages.note') ? __('pages.note') : 'Note',
+            ];
 
         foreach ($headers as $cell => $value) {
             $sheet->setCellValue($cell, $value);
@@ -1210,13 +1299,24 @@ new class extends Component
                     ?? '-'
             );
             $sheet->setCellValue('C' . $rowNumber, $activityNames ?: '-');
-            $sheet->setCellValue('D' . $rowNumber, optional($plan->plan_start)->format('Y-m-d'));
-            $sheet->setCellValue('E' . $rowNumber, optional($plan->plan_end)->format('Y-m-d'));
-            $sheet->setCellValue('F' . $rowNumber, $this->getZoneBlockLabel($plan->zone_block_ids));
-            $sheet->setCellValue('G' . $rowNumber, (float) $plan->plan_area);
-            $sheet->setCellValue('H' . $rowNumber, (float) $plan->request_l_per_hectare);
-            $sheet->setCellValue('I' . $rowNumber, (float) $plan->request_liters);
-            $sheet->setCellValue('J' . $rowNumber, $plan->note);
+
+            if ($this->isFacility()) {
+                $sheet->setCellValue('D' . $rowNumber, $plan->machine?->name ?? '-');
+                $sheet->setCellValue('E' . $rowNumber, $plan->location?->name ?? '-');
+                $sheet->setCellValue('F' . $rowNumber, (float) $plan->request_l_per_hectare);
+                $sheet->setCellValue('G' . $rowNumber, (float) $plan->plan_area);
+                $sheet->setCellValue('H' . $rowNumber, (float) $plan->request_liters);
+                $sheet->setCellValue('I' . $rowNumber, (int) ($plan->work_logs_count ?? 0));
+                $sheet->setCellValue('J' . $rowNumber, $plan->note);
+            } else {
+                $sheet->setCellValue('D' . $rowNumber, optional($plan->plan_start)->format('Y-m-d'));
+                $sheet->setCellValue('E' . $rowNumber, optional($plan->plan_end)->format('Y-m-d'));
+                $sheet->setCellValue('F' . $rowNumber, $this->getZoneBlockLabel($plan->zone_block_ids));
+                $sheet->setCellValue('G' . $rowNumber, (float) $plan->plan_area);
+                $sheet->setCellValue('H' . $rowNumber, (float) $plan->request_l_per_hectare);
+                $sheet->setCellValue('I' . $rowNumber, (float) $plan->request_liters);
+                $sheet->setCellValue('J' . $rowNumber, $plan->note);
+            }
 
             $rowNumber++;
         }
@@ -1224,14 +1324,26 @@ new class extends Component
         $lastDataRow = $rowNumber - 1;
 
         if ($lastDataRow >= 2) {
-            $sheet->setCellValue(
-                'F' . $rowNumber,
-                __('pages.total_plans') . ': ' . $plans->count()
-            );
-            $sheet->setCellValue('G' . $rowNumber, '=SUM(G2:G' . $lastDataRow . ')');
-            $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
-            $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
-            $sheet->setCellValue('J' . $rowNumber, '-');
+            if ($this->isFacility()) {
+                $sheet->setCellValue(
+                    'E' . $rowNumber,
+                    __('pages.total_plans') . ': ' . $plans->count()
+                );
+                $sheet->setCellValue('F' . $rowNumber, '=SUM(F2:F' . $lastDataRow . ')');
+                $sheet->setCellValue('G' . $rowNumber, '=SUM(G2:G' . $lastDataRow . ')');
+                $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
+                $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
+                $sheet->setCellValue('J' . $rowNumber, '-');
+            } else {
+                $sheet->setCellValue(
+                    'F' . $rowNumber,
+                    __('pages.total_plans') . ': ' . $plans->count()
+                );
+                $sheet->setCellValue('G' . $rowNumber, '=SUM(G2:G' . $lastDataRow . ')');
+                $sheet->setCellValue('H' . $rowNumber, '=SUM(H2:H' . $lastDataRow . ')');
+                $sheet->setCellValue('I' . $rowNumber, '=SUM(I2:I' . $lastDataRow . ')');
+                $sheet->setCellValue('J' . $rowNumber, '-');
+            }
         }
 
         $sheet->getStyle('A1:J1')->getFont()->setBold(true);
@@ -1363,6 +1475,14 @@ new class extends Component
                 ->whereHas('group', function ($query) {
                     $query->where('group_type', $this->workPlanType);
                 })
+                ->orderBy('name')
+                ->get(),
+            'machines' => Machine::query()
+                ->whereIn('status', ['Active', 'active'])
+                ->orderBy('name')
+                ->get(),
+            'locations' => Location::query()
+                ->whereIn('status', ['Active', 'active'])
                 ->orderBy('name')
                 ->get(),
             'zoneBlocks' => $zoneBlocks,
@@ -2414,11 +2534,6 @@ new class extends Component
     <div class="page-header">
         <div>
             <h1 class="page-title">{{ $this->workPlanTypeLabel() }} Work Plans</h1>
-            <p class="page-subtitle">
-                {{ $this->workPlanType === 'harvesting'
-                    ? 'Harvesting work plans use Tons (T) and L/T.'
-                    : __('pages.farm_work_plans_subtitle') }}
-            </p>
         </div>
 
         <div class="page-actions">
@@ -2485,18 +2600,20 @@ new class extends Component
                 </select>
             </div>
 
-            <div>
-                <label>{{ __('pages.zone_block') }}</label>
-                <select wire:model.live="zoneBlockFilter">
-                    <option value="">{{ __('pages.all_zone_blocks') }}</option>
+            @if(!$this->isFacility())
+                <div>
+                    <label>{{ __('pages.zone_block') }}</label>
+                    <select wire:model.live="zoneBlockFilter">
+                        <option value="">{{ __('pages.all_zone_blocks') }}</option>
 
-                    @foreach($zoneBlocks as $block)
-                        <option value="{{ $block->id }}">
-                            {{ optional($block->zone)->zone_code }} / {{ $block->block_code }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
+                        @foreach($zoneBlocks as $block)
+                            <option value="{{ $block->id }}">
+                                {{ optional($block->zone)->zone_code }} / {{ $block->block_code }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
         </div>
 
         <div style="margin-top: 14px;">
@@ -2557,12 +2674,22 @@ new class extends Component
                                 : 'Task Group' }}
                         </th>
                         <th>{{ __('pages.activity') }}</th>
-                        <th>{{ __('pages.plan_start') }}</th>
-                        <th>{{ __('pages.plan_end') }}</th>
-                        <th>{{ __('pages.zone_block') }}</th>
-                        <th>{{ $this->workPlanQtyLabel() }}</th>
-                        <th>{{ $this->workPlanRateLabel() }}</th>
-                        <th>{{ __('pages.request_l') }}</th>
+
+                        @if($this->isFacility())
+                            <th>Equipment</th>
+                            <th>Location</th>
+                            <th>Requested L/H</th>
+                            <th>Total Hour</th>
+                            <th>Total L</th>
+                        @else
+                            <th>{{ __('pages.plan_start') }}</th>
+                            <th>{{ __('pages.plan_end') }}</th>
+                            <th>{{ __('pages.zone_block') }}</th>
+                            <th>{{ $this->workPlanQtyLabel() }}</th>
+                            <th>{{ $this->workPlanRateLabel() }}</th>
+                            <th>{{ __('pages.request_l') }}</th>
+                        @endif
+
                         <th>Work Logs</th>
                         <th>{{ __('pages.action') }}</th>
                     </tr>
@@ -2620,77 +2747,155 @@ new class extends Component
                                 </td>
 
                                 <td class="col-activity">
-                                    <button
-                                        type="button"
-                                        class="activity-select-btn"
-                                        wire:click="addEditActivity"
-                                    >
-                                        <span>
-                                            {{ count($editRow['activities'] ?? []) > 0
-                                                ? count($editRow['activities']) . ' Activities'
-                                                : 'Choose Activities' }}
-                                        </span>
+                                    @if($this->isFacility())
+                                        <select
+                                            wire:model.live="editRow.activities.0.task_category_id"
+                                            @disabled(empty($editRow['task_category_group_id']))
+                                        >
+                                            <option value="">
+                                                {{ empty($editRow['task_category_group_id'])
+                                                    ? 'Select Task Group First'
+                                                    : 'Select Task' }}
+                                            </option>
 
-                                        <span class="activity-add-icon">+</span>
-                                    </button>
+                                            @foreach($editTaskCategories as $task)
+                                                <option value="{{ $task->id }}">
+                                                    {{ $task->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <button
+                                            type="button"
+                                            class="activity-select-btn"
+                                            wire:click="addEditActivity"
+                                        >
+                                            <span>
+                                                {{ count($editRow['activities'] ?? []) > 0
+                                                    ? count($editRow['activities']) . ' Activities'
+                                                    : 'Choose Activities' }}
+                                            </span>
+
+                                            <span class="activity-add-icon">+</span>
+                                        </button>
+                                    @endif
                                 </td>
 
-                                <td class="col-date">
-                                    <input type="date" wire:model.live="editRow.plan_start">
-                                </td>
+                                @if($this->isFacility())
+                                    <td>
+                                        <select wire:model.live="editRow.machine_id">
+                                            <option value="">Select Machine</option>
 
-                                <td class="col-date">
-                                    <input type="date" wire:model.live="editRow.plan_end">
-                                </td>
+                                            @foreach($machines as $machine)
+                                                <option value="{{ $machine->id }}">
+                                                    {{ $machine->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
 
-                                <td class="col-zone">
-                                    <button
-                                        type="button"
-                                        class="zone-select-btn"
-                                        wire:click="openEditZonePicker"
-                                    >
-                                        <span>
-                                            {{ $this->getZoneBlockSummary($editRow['zone_block_ids'] ?? []) }}
-                                            <small>{{ number_format($editSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}</small>
-                                        </span>
+                                    <td>
+                                        <select wire:model.live="editRow.location_id">
+                                            <option value="">Select Location</option>
 
-                                        <span class="zone-select-count">
-                                            {{ __('pages.choose') }}
-                                        </span>
-                                    </button>
-                                </td>
+                                            @foreach($locations as $location)
+                                                <option value="{{ $location->id }}">
+                                                    {{ $location->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
 
-                                <td class="col-number">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        wire:key="edit-plan-area-{{ $plan->id }}-{{ $editRow['plan_area_version'] ?? 0 }}"
-                                        wire:model.live.debounce.250ms="editRow.plan_area"
-                                        placeholder="0.00"
-                                    >
-                                </td>
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:model.live.debounce.250ms="editRow.request_l_per_hectare"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
 
-                                <td class="col-number">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        wire:model.live.debounce.250ms="editRow.request_l_per_hectare"
-                                        placeholder="0.00"
-                                    >
-                                </td>
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:key="edit-plan-area-{{ $plan->id }}-{{ $editRow['plan_area_version'] ?? 0 }}"
+                                            wire:model.live.debounce.250ms="editRow.plan_area"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
 
-                                <td class="col-number">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        wire:key="edit-request-liters-{{ $plan->id }}-{{ $editRow['request_liters_version'] ?? 0 }}"
-                                        wire:model.live.debounce.250ms="editRow.request_liters"
-                                        placeholder="0.00"
-                                    >
-                                </td>
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:key="edit-request-liters-{{ $plan->id }}-{{ $editRow['request_liters_version'] ?? 0 }}"
+                                            wire:model.live.debounce.250ms="editRow.request_liters"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
+                                @else
+                                    <td class="col-date">
+                                        <input type="date" wire:model.live="editRow.plan_start">
+                                    </td>
+
+                                    <td class="col-date">
+                                        <input type="date" wire:model.live="editRow.plan_end">
+                                    </td>
+
+                                    <td class="col-zone">
+                                        <button
+                                            type="button"
+                                            class="zone-select-btn"
+                                            wire:click="openEditZonePicker"
+                                        >
+                                            <span>
+                                                {{ $this->getZoneBlockSummary($editRow['zone_block_ids'] ?? []) }}
+                                                <small>{{ number_format($editSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}</small>
+                                            </span>
+
+                                            <span class="zone-select-count">
+                                                {{ __('pages.choose') }}
+                                            </span>
+                                        </button>
+                                    </td>
+
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:key="edit-plan-area-{{ $plan->id }}-{{ $editRow['plan_area_version'] ?? 0 }}"
+                                            wire:model.live.debounce.250ms="editRow.plan_area"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
+
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:model.live.debounce.250ms="editRow.request_l_per_hectare"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
+
+                                    <td class="col-number">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:key="edit-request-liters-{{ $plan->id }}-{{ $editRow['request_liters_version'] ?? 0 }}"
+                                            wire:model.live.debounce.250ms="editRow.request_liters"
+                                            placeholder="0.00"
+                                        >
+                                    </td>
+                                @endif
+
                                 <td>-</td>
 
                                 <td class="col-action">
@@ -2714,6 +2919,7 @@ new class extends Component
                                 </td>
                             </tr>
 
+                            @if(!$this->isFacility())
                            <tr class="activity-detail-row">
     <td colspan="12">
         <div class="activity-editor-card">
@@ -2822,6 +3028,7 @@ new class extends Component
         </div>
     </td>
 </tr>
+                            @endif
                         @else
                             <tr wire:key="work-plan-{{ $plan->id }}">
                                 <td class="row-no">
@@ -2848,62 +3055,76 @@ new class extends Component
                                 </td>
 
                                 <td class="saved-activity-cell">
-    @php
-        $savedActivityNames = $plan->activities
-            ->map(
-                fn ($activity) =>
-                    optional($activity->taskCategory)->name
-            )
-            ->filter()
-            ->values();
+                                    @php
+                                        $savedActivityNames = $plan->activities
+                                            ->map(fn ($activity) => optional($activity->taskCategory)->name)
+                                            ->filter()
+                                            ->values();
 
-        if (
-            $savedActivityNames->isEmpty() &&
-            $plan->taskCategory
-        ) {
-            $savedActivityNames = collect([
-                $plan->taskCategory->name,
-            ]);
-        }
-    @endphp
+                                        if ($savedActivityNames->isEmpty() && $plan->taskCategory) {
+                                            $savedActivityNames = collect([
+                                                $plan->taskCategory->name,
+                                            ]);
+                                        }
+                                    @endphp
 
-    @if($savedActivityNames->isNotEmpty())
-        <span
-            class="saved-activity-name"
-            title="{{ $savedActivityNames->implode(', ') }}"
-        >
-            {{ $savedActivityNames->implode(', ') }}
-        </span>
-    @else
-        -
-    @endif
-</td>
-
-                                <td>
-                                    {{ optional($plan->plan_start)->format('d M Y') ?: '-' }}
+                                    @if($savedActivityNames->isNotEmpty())
+                                        <span
+                                            class="saved-activity-name"
+                                            title="{{ $savedActivityNames->implode(', ') }}"
+                                        >
+                                            {{ $savedActivityNames->implode(', ') }}
+                                        </span>
+                                    @else
+                                        -
+                                    @endif
                                 </td>
 
-                                <td>
-                                    {{ optional($plan->plan_end)->format('d M Y') ?: '-' }}
-                                </td>
+                                @if($this->isFacility())
+                                    <td>{{ $plan->machine?->name ?? '-' }}</td>
+                                    <td>{{ $plan->location?->name ?? '-' }}</td>
 
-                                <td>
-                                    {{ $this->getZoneBlockLabel($plan->zone_block_ids) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $plan->request_l_per_hectare, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format((float) $plan->plan_area, 2) }}
-                                </td>
+                                    <td>
+                                        {{ number_format((float) $plan->plan_area, 2) }}
+                                    </td>
 
-                                <td>
-                                    {{ number_format((float) $plan->request_l_per_hectare, 2) }}
-                                </td>
+                                    <td>
+                                        <strong>
+                                            {{ number_format((float) $plan->request_liters, 2) }}
+                                        </strong>
+                                    </td>
+                                @else
+                                    <td>
+                                        {{ optional($plan->plan_start)->format('d M Y') ?: '-' }}
+                                    </td>
 
-                                <td>
-                                    <strong>
-                                        {{ number_format((float) $plan->request_liters, 2) }}
-                                    </strong>
-                                </td>
+                                    <td>
+                                        {{ optional($plan->plan_end)->format('d M Y') ?: '-' }}
+                                    </td>
+
+                                    <td>
+                                        {{ $this->getZoneBlockLabel($plan->zone_block_ids) }}
+                                    </td>
+
+                                    <td>
+                                        {{ number_format((float) $plan->plan_area, 2) }}
+                                    </td>
+
+                                    <td>
+                                        {{ number_format((float) $plan->request_l_per_hectare, 2) }}
+                                    </td>
+
+                                    <td>
+                                        <strong>
+                                            {{ number_format((float) $plan->request_liters, 2) }}
+                                        </strong>
+                                    </td>
+                                @endif
+
                                 <td>
                                     <strong>
                                         {{ number_format((int) $plan->work_logs_count) }}
@@ -2939,7 +3160,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="12" class="empty">
+                                <td colspan="{{ $this->isFacility() ? 11 : 12 }}" class="empty">
                                     {{ __('pages.no_work_plan_found') }}
                                 </td>
                             </tr>
@@ -3015,7 +3236,7 @@ new class extends Component
                                     <option value="">
                                         {{ empty($row['task_category_group_id'])
                                             ? 'Select Task Group First'
-                                            : 'Select Activity' }}
+                                            : 'Select Task' }}
                                     </option>
 
                                     @foreach($rowTaskCategories as $task)
@@ -3026,73 +3247,132 @@ new class extends Component
                                 </select>
                             </td>
 
-                            <td class="col-date">
-                                <input
-                                    type="date"
-                                    wire:model.live="rows.{{ $index }}.plan_start"
-                                >
-                            </td>
+                            @if($this->isFacility())
+                                <td>
+                                    <select wire:model.live="rows.{{ $index }}.machine_id">
+                                        <option value="">Select Machine</option>
 
-                            <td class="col-date">
-                                <input
-                                    type="date"
-                                    wire:model.live="rows.{{ $index }}.plan_end"
-                                >
-                            </td>
+                                        @foreach($machines as $machine)
+                                            <option value="{{ $machine->id }}">
+                                                {{ $machine->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
-                            <td class="col-zone">
-                                <button
-                                    type="button"
-                                    class="zone-select-btn"
-                                    wire:click="openRowZonePicker({{ $index }})"
-                                >
-                                    <span>
-                                        {{ $this->getZoneBlockSummary(
-                                            $row['zone_block_ids'] ?? []
-                                        ) }}
+                                <td>
+                                    <select wire:model.live="rows.{{ $index }}.location_id">
+                                        <option value="">Select Location</option>
 
-                                        <small>
-                                            {{ number_format($rowSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}
-                                        </small>
-                                    </span>
+                                        @foreach($locations as $location)
+                                            <option value="{{ $location->id }}">
+                                                {{ $location->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </td>
 
-                                    <span class="zone-select-count">
-                                        {{ __('pages.choose') }}
-                                    </span>
-                                </button>
-                            </td>
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.request_l_per_hectare"
+                                        placeholder="0.00"
+                                    >
+                                </td>
 
-                            <td class="col-number">
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    wire:key="new-plan-area-{{ $index }}-{{ $row['plan_area_version'] ?? 0 }}"
-                                    wire:model.live.debounce.250ms="rows.{{ $index }}.plan_area"
-                                    placeholder="0.00"
-                                >
-                            </td>
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="new-plan-area-{{ $index }}-{{ $row['plan_area_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.plan_area"
+                                        placeholder="0.00"
+                                    >
+                                </td>
 
-                            <td class="col-number">
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    wire:model.live.debounce.250ms="rows.{{ $index }}.request_l_per_hectare"
-                                    placeholder="0.00"
-                                >
-                            </td>
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="new-request-liters-{{ $index }}-{{ $row['request_liters_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.request_liters"
+                                        placeholder="0.00"
+                                    >
+                                </td>
+                            @else
+                                <td class="col-date">
+                                    <input
+                                        type="date"
+                                        wire:model.live="rows.{{ $index }}.plan_start"
+                                    >
+                                </td>
 
-                            <td class="col-number">
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    wire:key="new-request-liters-{{ $index }}-{{ $row['request_liters_version'] ?? 0 }}"
-                                    wire:model.live.debounce.250ms="rows.{{ $index }}.request_liters"
-                                    placeholder="0.00"
-                                >
-                            </td>
+                                <td class="col-date">
+                                    <input
+                                        type="date"
+                                        wire:model.live="rows.{{ $index }}.plan_end"
+                                    >
+                                </td>
+
+                                <td class="col-zone">
+                                    <button
+                                        type="button"
+                                        class="zone-select-btn"
+                                        wire:click="openRowZonePicker({{ $index }})"
+                                    >
+                                        <span>
+                                            {{ $this->getZoneBlockSummary(
+                                                $row['zone_block_ids'] ?? []
+                                            ) }}
+
+                                            <small>
+                                                {{ number_format($rowSelectedZoneArea, 2) }} {{ $this->workPlanQtyUnitLabel() }}
+                                            </small>
+                                        </span>
+
+                                        <span class="zone-select-count">
+                                            {{ __('pages.choose') }}
+                                        </span>
+                                    </button>
+                                </td>
+
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="new-plan-area-{{ $index }}-{{ $row['plan_area_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.plan_area"
+                                        placeholder="0.00"
+                                    >
+                                </td>
+
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.request_l_per_hectare"
+                                        placeholder="0.00"
+                                    >
+                                </td>
+
+                                <td class="col-number">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        wire:key="new-request-liters-{{ $index }}-{{ $row['request_liters_version'] ?? 0 }}"
+                                        wire:model.live.debounce.250ms="rows.{{ $index }}.request_liters"
+                                        placeholder="0.00"
+                                    >
+                                </td>
+                            @endif
+
                             <td>-</td>
 
                             <td class="col-action">
@@ -3134,25 +3414,47 @@ new class extends Component
                             @endif
                         </td>
 
-                        <td colspan="6" style="text-align: right;">
-                            {{ __('pages.total_plans') }}:
-                            {{ number_format((int) $this->totalPlans) }}
-                        </td>
+                        @if($this->isFacility())
+                            <td colspan="5" style="text-align: right;">
+                                {{ __('pages.total_plans') }}:
+                                {{ number_format((int) $this->totalPlans) }}
+                            </td>
 
-                        <td>
-                            {{ number_format((float) $this->totalPlanArea, 2) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalRequestLiterPerHectare, 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format((float) $this->totalRequestLiterPerHectare, 2) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalPlanArea, 2) }}
+                            </td>
 
-                        <td>
-                            {{ number_format((float) $this->totalRequestLiters, 2) }}
-                        </td>
+                            <td>
+                                {{ number_format((float) $this->totalRequestLiters, 2) }}
+                            </td>
 
-                        <td>-</td>
-                        <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                        @else
+                            <td colspan="6" style="text-align: right;">
+                                {{ __('pages.total_plans') }}:
+                                {{ number_format((int) $this->totalPlans) }}
+                            </td>
+
+                            <td>
+                                {{ number_format((float) $this->totalPlanArea, 2) }}
+                            </td>
+
+                            <td>
+                                {{ number_format((float) $this->totalRequestLiterPerHectare, 2) }}
+                            </td>
+
+                            <td>
+                                {{ number_format((float) $this->totalRequestLiters, 2) }}
+                            </td>
+
+                            <td>-</td>
+                            <td>-</td>
+                        @endif
                     </tr>
                 </tfoot>
             </table>
@@ -3273,7 +3575,7 @@ new class extends Component
     @endif
 
     {{-- Zone Block Picker Modal --}}
-    @if($zonePickerOpen)
+    @if($zonePickerOpen && !$this->isFacility())
         @php
             $activeSelectedIds = [];
 

@@ -41,7 +41,7 @@ class TaskCategoryGroupController extends Controller
         $validated = $request->validate([
             'group_type' => [
                 'required',
-                'in:planning,harvesting',
+                'in:planning,harvesting,facility',
             ],
             'name' => [
                 'required',
@@ -81,7 +81,7 @@ class TaskCategoryGroupController extends Controller
         $validated = $request->validate([
             'group_type' => [
                 'required',
-                'in:planning,harvesting',
+                'in:planning,harvesting,facility',
             ],
             'name' => [
                 'required',
