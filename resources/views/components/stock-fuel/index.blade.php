@@ -39,6 +39,7 @@ new class extends Component
     public function emptyRow()
     {
         return [
+            'fuel_date' => now()->toDateString(),
             'opening_stock' => '',
             'current_stock' => '',
             'purchase_price' => '',
@@ -69,6 +70,7 @@ new class extends Component
         }
 
         $this->validate([
+            "rows.$index.fuel_date" => 'required|date',
             "rows.$index.opening_stock" => 'nullable|numeric|min:0',
             "rows.$index.current_stock" => 'nullable|numeric|min:0',
             "rows.$index.purchase_price" => 'nullable|numeric|min:0',
@@ -81,6 +83,7 @@ new class extends Component
 
         try {
             DB::transaction(function () use ($row) {
+                $fuelDate = \Illuminate\Support\Carbon::parse($row['fuel_date'])->startOfDay();
                 $openingStock = (float) ($row['opening_stock'] ?: 0);
                 $currentStock = (float) ($row['current_stock'] ?: 0);
                 $purchasePrice = (float) ($row['purchase_price'] ?: 0);
@@ -95,7 +98,9 @@ new class extends Component
                     $totalStockIn = $currentStock;
                 }
 
-                $fuelStock = FuelStock::create([
+                $fuelStock = new FuelStock();
+
+                $fuelStock->fill([
                     'opening_stock' => $openingStock,
                     'current_stock' => $currentStock,
                     'purchase_price' => $purchasePrice,
@@ -106,6 +111,10 @@ new class extends Component
                     'updated_by' => Auth::id(),
                 ]);
 
+                $fuelStock->created_at = $fuelDate;
+                $fuelStock->updated_at = now();
+                $fuelStock->save();
+
                 if ($currentStock > 0) {
                     FuelTransaction::create([
                         'fuel_stock_id' => $fuelStock->id,
@@ -115,7 +124,7 @@ new class extends Component
                         'quantity' => $currentStock,
                         'balance_after' => $currentStock,
                         'reference_no' => 'STOCK-IN-' . $fuelStock->id . '-' . now()->format('YmdHis'),
-                        'transaction_date' => now()->toDateString(),
+                        'transaction_date' => $fuelDate->toDateString(),
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                         'note' => 'Initial fuel stock created',
@@ -266,20 +275,38 @@ new class extends Component
     }
 
     public function getTotalCurrentStockProperty()
-    {
-        return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->current_stock ?? 0));
-    }
+{
+    return (float) FuelStock::query()
+        ->where('status', 'active')
+        ->sum('current_stock');
+}
+public function getCurrentBalanceAfterProperty()
+{
+    return (float) (
+        FuelTransaction::query()
+            ->whereNotNull('balance_after')
+            ->latest('id')
+            ->value('balance_after') ?? 0
+    );
+}
 
     public function getTotalStockInProperty()
-    {
-        return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->total_stock_in ?? 0));
-    }
+{
+    return (float) FuelTransaction::query()
+        ->where('type', 'stock_in')
+        ->sum('quantity');
+}
 
-    public function getTotalStockOutProperty()
-    {
-        return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->total_stock_out ?? 0));
-    }
-
+public function getTotalStockOutProperty()
+{
+    return (float) FuelTransaction::query()
+        ->where(function ($query) {
+            $query->where('reference_no', 'like', 'WORKLOG-%')
+                ->orWhere('type', 'stock_out');
+        })
+        ->selectRaw('COALESCE(SUM(ABS(quantity)), 0) AS total')
+        ->value('total');
+}
     public function getTotalStockValueProperty()
     {
         return $this->fuelStocks->sum(function ($stock) {
@@ -413,7 +440,7 @@ new class extends Component
             <div class="fuel-main-card">
                 <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
                 <div class="fuel-card-value">
-                    {{ number_format((float) $this->totalCurrentStock, 2) }} L
+                    {{ number_format((float) $this->currentBalanceAfter, 2) }} L
                 </div>
                 <div class="fuel-card-note">
                     {{ __('pages.stock_fuel_subtitle') }}
@@ -440,6 +467,7 @@ new class extends Component
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th>Date</th>
                         <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
                         <th>{{ __('pages.purchase_price') ?? 'Purchase Price' }}</th>
                         <th>Total Price</th>
@@ -453,6 +481,9 @@ new class extends Component
                         @if($editingId === $stock->id)
                             <tr class="new-row">
                                 <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
+                                <td>
+                                        {{ optional($stock->created_at)->format('d M Y') }}
+                                    </td>
 
                                 <td>
                                     <input type="number"
@@ -466,8 +497,8 @@ new class extends Component
 
                                 <td>
                                    <input type="number"
-                                        step="0.01"
-                                        wire:model.live="editRow.purchase_price"
+                                        step="0.0001"
+                                        wire:model.live="rows.{{ $index }}.purchase_price"
                                         placeholder="0.00">
                                     @error('editRow.purchase_price')
                                         <small class="error">{{ $message }}</small>
@@ -509,13 +540,16 @@ new class extends Component
                         @else
                             <tr>
                                 <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
+                                <td>
+                                    {{ optional($stock->created_at)->format('d M Y') }}
+                                </td>
 
                                 <td class="green-number">
                                     {{ number_format((float) $stock->current_stock, 2) }} L
                                 </td>
 
                                 <td>
-                                    ${{ number_format((float) $stock->purchase_price, 2) }}
+                                    ${{ number_format((float) $stock->purchase_price, 4) }}
                                 </td>
                                 <td>
                                     <strong>
@@ -550,7 +584,7 @@ new class extends Component
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="6" class="empty">
+                                <td colspan="7" class="empty">
                                     {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
                                 </td>
                             </tr>
@@ -559,6 +593,7 @@ new class extends Component
 
                     @foreach($rows as $index => $row)
                         <tr class="new-row">
+                            
                             <td class="row-no">
                                 <button type="button"
                                         wire:click="removeRow({{ $index }})"
@@ -567,10 +602,18 @@ new class extends Component
                                     ×
                                 </button>
                             </td>
+                            <td>
+                                <input type="date"
+                                    wire:model="rows.{{ $index }}.fuel_date">
+
+                                @error("rows.$index.fuel_date")
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
+                            </td>
 
                             <td>
                                 <input type="number"
-                                       step="0.01"
+                                       step="0.0001"
                                        wire:model.live="rows.{{ $index }}.current_stock"
                                        placeholder="0">
                                 @error("rows.$index.current_stock")
@@ -582,7 +625,7 @@ new class extends Component
                                 <input type="number"
                                     step="0.01"
                                     wire:model.live="rows.{{ $index }}.purchase_price"
-                                    placeholder="0.00">
+                                    placeholder="0.0000">
                                 @error("rows.$index.purchase_price")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -631,6 +674,7 @@ new class extends Component
                                 -
                             @endif
                         </td>
+                        <td>-</td>
 
                         <td class="green-number">
                                 {{ number_format((float) $this->totalCurrentStock, 2) }} L
