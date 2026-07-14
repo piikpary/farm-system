@@ -440,7 +440,7 @@ public function getTotalStockOutProperty()
             <div class="fuel-main-card">
                 <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
                 <div class="fuel-card-value">
-                    {{ number_format((float) $this->currentBalanceAfter, 2) }} L
+                    {{ number_format((float) $this->totalCurrentStock, 2) }} L
                 </div>
                 <div class="fuel-card-note">
                     {{ __('pages.stock_fuel_subtitle') }}
