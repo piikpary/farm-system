@@ -1082,7 +1082,18 @@ new class extends Component
             );
         }
 
-        FarmWorkPlan::findOrFail($id)->delete();
+        $plan = FarmWorkPlan::findOrFail($id);
+
+        if ($plan->workLogs()->exists()) {
+            session()->flash(
+                'error',
+                'This Work Plan cannot be deleted because it already has Work Logs. Please delete all related Work Logs first.'
+            );
+
+            return;
+        }
+
+        $plan->delete();
 
         session()->flash(
             'success',
@@ -3171,6 +3182,17 @@ new class extends Component
                                         @endif
 
                                         @if(auth()->user()->hasPermission('work_plans.delete'))
+                                        @if((int) $plan->work_logs_count > 0)
+                                            <button
+                                                type="button"
+                                                class="mini danger"
+                                                disabled
+                                                title="Delete all related Work Logs first."
+                                                style="opacity: 0.5; cursor: not-allowed;"
+                                            >
+                                                {{ __('pages.delete') }}
+                                            </button>
+                                        @else
                                             <button
                                                 type="button"
                                                 wire:click="delete({{ $plan->id }})"
@@ -3180,6 +3202,7 @@ new class extends Component
                                                 {{ __('pages.delete') }}
                                             </button>
                                         @endif
+                                    @endif
                                     </div>
                                 </td>
                             </tr>

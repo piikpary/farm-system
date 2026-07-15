@@ -613,7 +613,7 @@ new class extends Component
         <div class="fuel-simple-grid">
             <div class="fuel-main-card">
                 <div class="fuel-card-label">
-                    {{ __('pages.current_stock') ?? 'Current Fuel Stock' }}
+                    {{ __('pages.current_stock') ?? 'Current Stock' }}
                 </div>
 
                 <div class="fuel-card-value">
@@ -627,7 +627,7 @@ new class extends Component
 
             <div class="fuel-small-card">
                 <div class="fuel-card-label">
-                    {{ __('pages.total_stock_in') ?? 'Total Added' }}
+                    {{ __('pages.total_stock_in') ?? 'Total Stock In' }}
                 </div>
 
                 <div class="fuel-small-value green-number">
@@ -637,7 +637,7 @@ new class extends Component
 
             <div class="fuel-small-card">
                 <div class="fuel-card-label">
-                    {{ __('pages.total_stock_out') ?? 'Total Used' }}
+                    {{ __('pages.total_stock_out') ?? 'Total Stock Out' }}
                 </div>
 
                 <div class="fuel-small-value red-number">
@@ -652,10 +652,10 @@ new class extends Component
                     <tr>
                         <th>#</th>
                         <th>Date</th>
+                        <th>Stock In</th>
                         <th>
                             {{ __('pages.current_stock') ?? 'Current Stock' }}
                         </th>
-                        <th>Stock In</th>
                         <th>
                             {{ __('pages.purchase_price') ?? 'Purchase Price' }}
                         </th>
@@ -684,10 +684,10 @@ new class extends Component
                                 <td>
                                     <input type="number"
                                            step="0.01"
-                                           wire:model.live="editRow.current_stock"
+                                           wire:model.live="editRow.total_stock_in"
                                            placeholder="0">
 
-                                    @error('editRow.current_stock')
+                                    @error('editRow.total_stock_in')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
                                 </td>
@@ -695,10 +695,10 @@ new class extends Component
                                 <td>
                                     <input type="number"
                                            step="0.01"
-                                           wire:model.live="editRow.total_stock_in"
+                                           wire:model.live="editRow.current_stock"
                                            placeholder="0">
 
-                                    @error('editRow.total_stock_in')
+                                    @error('editRow.current_stock')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
                                 </td>
@@ -766,12 +766,12 @@ new class extends Component
                                     {{ optional($stock->created_at)->format('d M Y') }}
                                 </td>
 
-                                <td class="green-number">
-                                    {{ number_format((float) $stock->current_stock, 2) }} L
-                                </td>
-
                                 <td>
                                     {{ number_format((float) $stock->total_stock_in, 2) }} L
+                                </td>
+
+                                <td class="green-number">
+                                    {{ number_format((float) $stock->current_stock, 2) }} L
                                 </td>
 
                                 <td>
@@ -842,22 +842,22 @@ new class extends Component
 
                             <td>
                                 <input type="number"
-                                       step="0.0001"
-                                       wire:model.live="rows.{{ $index }}.current_stock"
+                                       step="0.01"
+                                       wire:model.live="rows.{{ $index }}.total_stock_in"
                                        placeholder="0">
 
-                                @error("rows.$index.current_stock")
+                                @error("rows.$index.total_stock_in")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
 
                             <td>
                                 <input type="number"
-                                       step="0.01"
-                                       wire:model.live="rows.{{ $index }}.total_stock_in"
+                                       step="0.0001"
+                                       wire:model.live="rows.{{ $index }}.current_stock"
                                        placeholder="0">
 
-                                @error("rows.$index.total_stock_in")
+                                @error("rows.$index.current_stock")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
@@ -935,13 +935,6 @@ new class extends Component
 
                         <td>-</td>
 
-                        <td class="green-number">
-                            {{ number_format(
-                                (float) $this->totalCurrentStock,
-                                2
-                            ) }} L
-                        </td>
-
                         <td>
                             {{ number_format(
                                 (float) $this->fuelStocks->sum(
@@ -949,6 +942,13 @@ new class extends Component
                                         $stock->total_stock_in ?? 0
                                     )
                                 ),
+                                2
+                            ) }} L
+                        </td>
+
+                        <td class="green-number">
+                            {{ number_format(
+                                (float) $this->totalCurrentStock,
                                 2
                             ) }} L
                         </td>
