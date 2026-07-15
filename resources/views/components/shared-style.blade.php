@@ -1175,4 +1175,16 @@ table {
         font-size: 12px;
     }
 }
+nav[role="navigation"] span[aria-current="page"] > span,
+.pagination .page-item.active .page-link {
+    background-color: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #ffffff !important;
+    font-weight: 900 !important;
+}
+
+nav[role="navigation"] span[aria-current="page"] > span *,
+.pagination .page-item.active .page-link * {
+    color: #ffffff !important;
+}
 </style>

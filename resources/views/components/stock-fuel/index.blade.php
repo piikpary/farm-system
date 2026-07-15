@@ -91,6 +91,10 @@ new class extends Component
                 $totalStockIn = (float) ($row['total_stock_in'] ?: 0);
                 $totalStockOut = (float) ($row['total_stock_out'] ?: 0);
 
+                if ($currentStock <= 0 && $totalStockIn > 0) {
+                    $currentStock = $totalStockIn;
+                }
+
                 if ($currentStock <= 0 && $openingStock > 0) {
                     $currentStock = $openingStock;
                 }
@@ -116,7 +120,7 @@ new class extends Component
                 $fuelStock->updated_at = now();
                 $fuelStock->save();
 
-                if ($currentStock > 0) {
+                if ($totalStockIn > 0) {
                     FuelTransaction::create([
                         'fuel_stock_id' => $fuelStock->id,
                         'tractor_id' => null,
