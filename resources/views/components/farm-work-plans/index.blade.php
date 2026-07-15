@@ -2527,6 +2527,33 @@ new class extends Component
         .activity-view-table td {
             white-space: nowrap;
         }
+        .zone-block-wrap {
+    width: 480px;
+    min-width: 320px;
+    max-width: 480px;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.5 !important;
+    vertical-align: top !important;
+}
+.plan-table tbody > tr:has(> td.zone-block-wrap) {
+    height: auto !important;
+    min-height: 52px !important;
+    max-height: none !important;
+}
+
+.plan-table tbody > tr:has(> td.zone-block-wrap) > td {
+    height: auto !important;
+    min-height: 52px !important;
+    max-height: none !important;
+}
+.plan-table tbody > tr:not(.new-row):not(.activity-detail-row)
+> td.zone-block-wrap {
+    height: auto !important;
+    min-height: 52px !important;
+    max-height: none !important;
+}
 
     </style>
 
@@ -3106,7 +3133,7 @@ new class extends Component
                                         {{ optional($plan->plan_end)->format('d M Y') ?: '-' }}
                                     </td>
 
-                                    <td>
+                                    <td class="zone-block-wrap">
                                         {{ $this->getZoneBlockLabel($plan->zone_block_ids) }}
                                     </td>
 

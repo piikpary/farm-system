@@ -84,6 +84,7 @@ new class extends Component
         try {
             DB::transaction(function () use ($row) {
                 $fuelDate = \Illuminate\Support\Carbon::parse($row['fuel_date'])->startOfDay();
+
                 $openingStock = (float) ($row['opening_stock'] ?: 0);
                 $currentStock = (float) ($row['current_stock'] ?: 0);
                 $purchasePrice = (float) ($row['purchase_price'] ?: 0);
@@ -135,7 +136,10 @@ new class extends Component
             unset($this->rows[$index]);
             $this->rows = array_values($this->rows);
 
-            session()->flash('success', 'Fuel stock saved successfully and history created.');
+            session()->flash(
+                'success',
+                'Fuel stock saved successfully and history created.'
+            );
         } catch (\Exception $e) {
             session()->flash('error', $e->getMessage());
         }
@@ -192,7 +196,8 @@ new class extends Component
 
         try {
             DB::transaction(function () {
-                $fuelStock = FuelStock::lockForUpdate()->findOrFail($this->editingId);
+                $fuelStock = FuelStock::lockForUpdate()
+                    ->findOrFail($this->editingId);
 
                 $oldCurrentStock = (float) $fuelStock->current_stock;
 
@@ -235,7 +240,10 @@ new class extends Component
 
             $this->cancelEdit();
 
-            session()->flash('success', 'Fuel stock updated successfully and history adjusted.');
+            session()->flash(
+                'success',
+                'Fuel stock updated successfully and history adjusted.'
+            );
         } catch (\Exception $e) {
             session()->flash('error', $e->getMessage());
         }
@@ -257,12 +265,36 @@ new class extends Component
         return FuelStock::query()
             ->when($this->search, function ($q) {
                 $q->where(function ($query) {
-                    $query->where('status', 'like', '%' . $this->search . '%')
-                        ->orWhere('opening_stock', 'like', '%' . $this->search . '%')
-                        ->orWhere('current_stock', 'like', '%' . $this->search . '%')
-                        ->orWhere('purchase_price', 'like', '%' . $this->search . '%')
-                        ->orWhere('total_stock_in', 'like', '%' . $this->search . '%')
-                        ->orWhere('total_stock_out', 'like', '%' . $this->search . '%');
+                    $query->where(
+                        'status',
+                        'like',
+                        '%' . $this->search . '%'
+                    )
+                        ->orWhere(
+                            'opening_stock',
+                            'like',
+                            '%' . $this->search . '%'
+                        )
+                        ->orWhere(
+                            'current_stock',
+                            'like',
+                            '%' . $this->search . '%'
+                        )
+                        ->orWhere(
+                            'purchase_price',
+                            'like',
+                            '%' . $this->search . '%'
+                        )
+                        ->orWhere(
+                            'total_stock_in',
+                            'like',
+                            '%' . $this->search . '%'
+                        )
+                        ->orWhere(
+                            'total_stock_out',
+                            'like',
+                            '%' . $this->search . '%'
+                        );
                 });
             })
             ->latest()
@@ -271,46 +303,50 @@ new class extends Component
 
     public function getTotalOpeningStockProperty()
     {
-        return $this->fuelStocks->sum(fn ($stock) => (float) ($stock->opening_stock ?? 0));
+        return $this->fuelStocks->sum(
+            fn ($stock) => (float) ($stock->opening_stock ?? 0)
+        );
     }
 
     public function getTotalCurrentStockProperty()
-{
-    return (float) FuelStock::query()
-        ->where('status', 'active')
-        ->sum('current_stock');
-}
-public function getCurrentBalanceAfterProperty()
-{
-    return (float) (
-        FuelTransaction::query()
-            ->whereNotNull('balance_after')
-            ->latest('id')
-            ->value('balance_after') ?? 0
-    );
-}
+    {
+        return (float) FuelStock::query()
+            ->where('status', 'active')
+            ->sum('current_stock');
+    }
+
+    public function getCurrentBalanceAfterProperty()
+    {
+        return (float) (
+            FuelTransaction::query()
+                ->whereNotNull('balance_after')
+                ->latest('id')
+                ->value('balance_after') ?? 0
+        );
+    }
 
     public function getTotalStockInProperty()
-{
-    return (float) FuelTransaction::query()
-        ->where('type', 'stock_in')
-        ->sum('quantity');
-}
+    {
+        return (float) FuelTransaction::query()
+            ->where('type', 'stock_in')
+            ->sum('quantity');
+    }
 
-public function getTotalStockOutProperty()
-{
-    return (float) FuelTransaction::query()
-        ->where(function ($query) {
-            $query->where('reference_no', 'like', 'WORKLOG-%')
-                ->orWhere('type', 'stock_out');
-        })
-        ->selectRaw('COALESCE(SUM(ABS(quantity)), 0) AS total')
-        ->value('total');
-}
+    public function getTotalStockOutProperty()
+    {
+        return (float) FuelTransaction::query()
+            ->where(function ($query) {
+                $query->where('reference_no', 'like', 'WORKLOG-%')
+                    ->orWhere('type', 'stock_out');
+            })
+            ->selectRaw('COALESCE(SUM(ABS(quantity)), 0) AS total')
+            ->value('total');
+    }
+
     public function getTotalStockValueProperty()
     {
         return $this->fuelStocks->sum(function ($stock) {
-            return (float) ($stock->current_stock ?? 0)
+            return (float) ($stock->total_stock_in ?? 0)
                 * (float) ($stock->purchase_price ?? 0);
         });
     }
@@ -323,28 +359,161 @@ public function getTotalStockOutProperty()
     @include('components.toast-alert')
 
     <style>
-        .master-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
-        .filter-box { display:flex; align-items:center; gap:10px; flex:1; max-width:480px; }
-        .filter-box input { width:100%; height:44px; border:1px solid #d1d5db; border-radius:12px; padding:10px 14px; font-weight:700; background:#ffffff; }
-        .master-table-wrap { overflow-x:auto; border:1px solid #e5e7eb; border-radius:16px; }
-        .master-table { width:100%; min-width:1150px; border-collapse:collapse; background:#ffffff; }
-        .master-table th { background:#f8fafc; color:#0f172a; font-size:12px; font-weight:900; text-transform:uppercase; padding:12px 10px; border-bottom:1px solid #e5e7eb; white-space:nowrap; }
-        .master-table td { padding:10px; border-bottom:1px solid #eef2f7; vertical-align:middle; white-space:nowrap; }
-        .master-table input, .master-table select { width:100%; min-width:140px; height:44px; padding:9px 10px; border:1px solid #d1d5db; border-radius:10px; font-size:13px; background:#ffffff; font-weight:700; }
-        .row-no { width:45px; min-width:45px; text-align:center; font-weight:900; color:#64748b; }
-        .new-row { background:#f0fdf4; }
-        .new-row td { border-bottom:1px solid #bbf7d0; }
-        .table-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-        .total-row { background:#f8fafc; font-weight:900; border-top:2px solid #d1d5db; }
-        .total-row td { border-bottom:0; padding:14px 10px; color:#0f172a; }
-        .total-label { text-align:right; font-weight:900; }
-        .plus-cell { width:34px; height:34px; border:none; border-radius:10px; background:#16a34a; color:#ffffff; font-size:20px; font-weight:900; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-        .plus-cell:hover { background:#15803d; }
-        .danger-plus { background:#dc2626; }
-        .danger-plus:hover { background:#b91c1c; }
-        .green-number { color:#166534; font-weight:900; }
-        .red-number { color:#dc2626; font-weight:900; }
-        .error { display:block; color:#dc2626; font-size:12px; margin-top:4px; font-weight:700; }
+        .master-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .filter-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            max-width: 480px;
+        }
+
+        .filter-box input {
+            width: 100%;
+            height: 44px;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+            background: #ffffff;
+        }
+
+        .master-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+        }
+
+        .master-table {
+            width: 100%;
+            min-width: 1150px;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        .master-table th {
+            background: #f8fafc;
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 12px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+
+        .master-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .master-table input,
+        .master-table select {
+            width: 100%;
+            min-width: 140px;
+            height: 44px;
+            padding: 9px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 13px;
+            background: #ffffff;
+            font-weight: 700;
+        }
+
+        .row-no {
+            width: 45px;
+            min-width: 45px;
+            text-align: center;
+            font-weight: 900;
+            color: #64748b;
+        }
+
+        .new-row {
+            background: #f0fdf4;
+        }
+
+        .new-row td {
+            border-bottom: 1px solid #bbf7d0;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .total-row {
+            background: #f8fafc;
+            font-weight: 900;
+            border-top: 2px solid #d1d5db;
+        }
+
+        .total-row td {
+            border-bottom: 0;
+            padding: 14px 10px;
+            color: #0f172a;
+        }
+
+        .total-label {
+            text-align: right;
+            font-weight: 900;
+        }
+
+        .plus-cell {
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 10px;
+            background: #16a34a;
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 900;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .plus-cell:hover {
+            background: #15803d;
+        }
+
+        .danger-plus {
+            background: #dc2626;
+        }
+
+        .danger-plus:hover {
+            background: #b91c1c;
+        }
+
+        .green-number {
+            color: #166534;
+            font-weight: 900;
+        }
+
+        .red-number {
+            color: #dc2626;
+            font-weight: 900;
+        }
+
+        .error {
+            display: block;
+            color: #dc2626;
+            font-size: 12px;
+            margin-top: 4px;
+            font-weight: 700;
+        }
 
         .fuel-simple-grid {
             display: grid;
@@ -416,8 +585,13 @@ public function getTotalStockOutProperty()
 
     <div class="page-header">
         <div>
-            <h1 class="page-title">{{ __('pages.stock_fuel') }}</h1>
-            <p class="page-subtitle">{{ __('pages.stock_fuel_subtitle') }}</p>
+            <h1 class="page-title">
+                {{ __('pages.stock_fuel') }}
+            </h1>
+
+            <p class="page-subtitle">
+                {{ __('pages.stock_fuel_subtitle') }}
+            </p>
         </div>
 
         <div class="page-actions">
@@ -438,24 +612,34 @@ public function getTotalStockOutProperty()
 
         <div class="fuel-simple-grid">
             <div class="fuel-main-card">
-                <div class="fuel-card-label">{{ __('pages.current_stock') ?? 'Current Fuel Stock' }}</div>
+                <div class="fuel-card-label">
+                    {{ __('pages.current_stock') ?? 'Current Fuel Stock' }}
+                </div>
+
                 <div class="fuel-card-value">
                     {{ number_format((float) $this->totalCurrentStock, 2) }} L
                 </div>
+
                 <div class="fuel-card-note">
                     {{ __('pages.stock_fuel_subtitle') }}
                 </div>
             </div>
 
             <div class="fuel-small-card">
-                <div class="fuel-card-label">{{ __('pages.total_stock_in') ?? 'Total Added' }}</div>
+                <div class="fuel-card-label">
+                    {{ __('pages.total_stock_in') ?? 'Total Added' }}
+                </div>
+
                 <div class="fuel-small-value green-number">
                     {{ number_format((float) $this->totalStockIn, 2) }} L
                 </div>
             </div>
 
             <div class="fuel-small-card">
-                <div class="fuel-card-label">{{ __('pages.total_stock_out') ?? 'Total Used' }}</div>
+                <div class="fuel-card-label">
+                    {{ __('pages.total_stock_out') ?? 'Total Used' }}
+                </div>
+
                 <div class="fuel-small-value red-number">
                     {{ number_format((float) $this->totalStockOut, 2) }} L
                 </div>
@@ -468,11 +652,20 @@ public function getTotalStockOutProperty()
                     <tr>
                         <th>#</th>
                         <th>Date</th>
-                        <th>{{ __('pages.current_stock') ?? 'Current Stock' }}</th>
-                        <th>{{ __('pages.purchase_price') ?? 'Purchase Price' }}</th>
+                        <th>
+                            {{ __('pages.current_stock') ?? 'Current Stock' }}
+                        </th>
+                        <th>Stock In</th>
+                        <th>
+                            {{ __('pages.purchase_price') ?? 'Purchase Price' }}
+                        </th>
                         <th>Total Price</th>
-                        <th>{{ __('pages.status') ?? 'Status' }}</th>
-                        <th width="190">{{ __('pages.action') ?? 'Action' }}</th>
+                        <th>
+                            {{ __('pages.status') ?? 'Status' }}
+                        </th>
+                        <th width="190">
+                            {{ __('pages.action') ?? 'Action' }}
+                        </th>
                     </tr>
                 </thead>
 
@@ -480,26 +673,42 @@ public function getTotalStockOutProperty()
                     @forelse($this->fuelStocks as $stock)
                         @if($editingId === $stock->id)
                             <tr class="new-row">
-                                <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
+                                <td class="row-no">
+                                    {{ $this->fuelStocks->firstItem() + $loop->index }}
+                                </td>
+
                                 <td>
-                                        {{ optional($stock->created_at)->format('d M Y') }}
-                                    </td>
+                                    {{ optional($stock->created_at)->format('d M Y') }}
+                                </td>
 
                                 <td>
                                     <input type="number"
                                            step="0.01"
                                            wire:model.live="editRow.current_stock"
                                            placeholder="0">
+
                                     @error('editRow.current_stock')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
                                 </td>
 
                                 <td>
-                                   <input type="number"
-                                        step="0.0001"
-                                        wire:model.live="rows.{{ $index }}.purchase_price"
-                                        placeholder="0.00">
+                                    <input type="number"
+                                           step="0.01"
+                                           wire:model.live="editRow.total_stock_in"
+                                           placeholder="0">
+
+                                    @error('editRow.total_stock_in')
+                                        <small class="error">{{ $message }}</small>
+                                    @enderror
+                                </td>
+
+                                <td>
+                                    <input type="number"
+                                           step="0.0001"
+                                           wire:model.live="editRow.purchase_price"
+                                           placeholder="0.0000">
+
                                     @error('editRow.purchase_price')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -508,7 +717,7 @@ public function getTotalStockOutProperty()
                                 <td>
                                     <strong>
                                         ${{ number_format(
-                                            (float) ($editRow['current_stock'] ?: 0)
+                                            (float) ($editRow['total_stock_in'] ?: 0)
                                             * (float) ($editRow['purchase_price'] ?: 0),
                                             2
                                         ) }}
@@ -517,9 +726,15 @@ public function getTotalStockOutProperty()
 
                                 <td>
                                     <select wire:model.live="editRow.status">
-                                        <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
-                                        <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
+                                        <option value="active">
+                                            {{ __('pages.active') ?? 'Active' }}
+                                        </option>
+
+                                        <option value="inactive">
+                                            {{ __('pages.inactive') ?? 'Inactive' }}
+                                        </option>
                                     </select>
+
                                     @error('editRow.status')
                                         <small class="error">{{ $message }}</small>
                                     @enderror
@@ -527,11 +742,15 @@ public function getTotalStockOutProperty()
 
                                 <td>
                                     <div class="table-actions">
-                                        <button type="button" wire:click="updateRow" class="mini">
+                                        <button type="button"
+                                                wire:click="updateRow"
+                                                class="mini">
                                             {{ __('pages.save') ?? 'Save' }}
                                         </button>
 
-                                        <button type="button" wire:click="cancelEdit" class="mini danger">
+                                        <button type="button"
+                                                wire:click="cancelEdit"
+                                                class="mini danger">
                                             {{ __('pages.cancel') ?? 'Cancel' }}
                                         </button>
                                     </div>
@@ -539,7 +758,10 @@ public function getTotalStockOutProperty()
                             </tr>
                         @else
                             <tr>
-                                <td class="row-no">{{ $this->fuelStocks->firstItem() + $loop->index }}</td>
+                                <td class="row-no">
+                                    {{ $this->fuelStocks->firstItem() + $loop->index }}
+                                </td>
+
                                 <td>
                                     {{ optional($stock->created_at)->format('d M Y') }}
                                 </td>
@@ -549,12 +771,18 @@ public function getTotalStockOutProperty()
                                 </td>
 
                                 <td>
+                                    {{ number_format((float) $stock->total_stock_in, 2) }} L
+                                </td>
+
+                                <td>
                                     ${{ number_format((float) $stock->purchase_price, 4) }}
                                 </td>
+
                                 <td>
                                     <strong>
                                         ${{ number_format(
-                                            (float) $stock->current_stock * (float) $stock->purchase_price,
+                                            (float) $stock->total_stock_in
+                                            * (float) $stock->purchase_price,
                                             2
                                         ) }}
                                     </strong>
@@ -584,8 +812,9 @@ public function getTotalStockOutProperty()
                     @empty
                         @if(count($rows) === 0)
                             <tr>
-                                <td colspan="7" class="empty">
-                                    {{ __('pages.no_active_stock_fuel') ?? 'No fuel stock found.' }}
+                                <td colspan="8" class="empty">
+                                    {{ __('pages.no_active_stock_fuel')
+                                        ?? 'No fuel stock found.' }}
                                 </td>
                             </tr>
                         @endif
@@ -593,7 +822,6 @@ public function getTotalStockOutProperty()
 
                     @foreach($rows as $index => $row)
                         <tr class="new-row">
-                            
                             <td class="row-no">
                                 <button type="button"
                                         wire:click="removeRow({{ $index }})"
@@ -602,9 +830,10 @@ public function getTotalStockOutProperty()
                                     ×
                                 </button>
                             </td>
+
                             <td>
                                 <input type="date"
-                                    wire:model="rows.{{ $index }}.fuel_date">
+                                       wire:model="rows.{{ $index }}.fuel_date">
 
                                 @error("rows.$index.fuel_date")
                                     <small class="error">{{ $message }}</small>
@@ -616,6 +845,7 @@ public function getTotalStockOutProperty()
                                        step="0.0001"
                                        wire:model.live="rows.{{ $index }}.current_stock"
                                        placeholder="0">
+
                                 @error("rows.$index.current_stock")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -623,28 +853,47 @@ public function getTotalStockOutProperty()
 
                             <td>
                                 <input type="number"
-                                    step="0.01"
-                                    wire:model.live="rows.{{ $index }}.purchase_price"
-                                    placeholder="0.0000">
+                                       step="0.01"
+                                       wire:model.live="rows.{{ $index }}.total_stock_in"
+                                       placeholder="0">
+
+                                @error("rows.$index.total_stock_in")
+                                    <small class="error">{{ $message }}</small>
+                                @enderror
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       step="0.0001"
+                                       wire:model.live="rows.{{ $index }}.purchase_price"
+                                       placeholder="0.0000">
+
                                 @error("rows.$index.purchase_price")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
                             </td>
+
                             <td>
-                                    <strong>
-                                        ${{ number_format(
-                                            (float) ($row['current_stock'] ?: 0)
-                                            * (float) ($row['purchase_price'] ?: 0),
-                                            2
-                                        ) }}
-                                    </strong>
-                                </td>
+                                <strong>
+                                    ${{ number_format(
+                                        (float) ($row['total_stock_in'] ?: 0)
+                                        * (float) ($row['purchase_price'] ?: 0),
+                                        2
+                                    ) }}
+                                </strong>
+                            </td>
 
                             <td>
                                 <select wire:model.live="rows.{{ $index }}.status">
-                                    <option value="active">{{ __('pages.active') ?? 'Active' }}</option>
-                                    <option value="inactive">{{ __('pages.inactive') ?? 'Inactive' }}</option>
+                                    <option value="active">
+                                        {{ __('pages.active') ?? 'Active' }}
+                                    </option>
+
+                                    <option value="inactive">
+                                        {{ __('pages.inactive') ?? 'Inactive' }}
+                                    </option>
                                 </select>
+
                                 @error("rows.$index.status")
                                     <small class="error">{{ $message }}</small>
                                 @enderror
@@ -652,11 +901,15 @@ public function getTotalStockOutProperty()
 
                             <td>
                                 <div class="table-actions">
-                                    <button type="button" wire:click="saveRow({{ $index }})" class="mini">
+                                    <button type="button"
+                                            wire:click="saveRow({{ $index }})"
+                                            class="mini">
                                         {{ __('pages.save') ?? 'Save' }}
                                     </button>
 
-                                    <button type="button" wire:click="removeRow({{ $index }})" class="mini danger">
+                                    <button type="button"
+                                            wire:click="removeRow({{ $index }})"
+                                            class="mini danger">
                                         {{ __('pages.remove') ?? 'Remove' }}
                                     </button>
                                 </div>
@@ -669,27 +922,50 @@ public function getTotalStockOutProperty()
                     <tr class="total-row">
                         <td>
                             @if(auth()->user()->hasPermission('stock_fuel.create'))
-                                <button type="button" wire:click="addRow" class="plus-cell" title="Add fuel">+</button>
+                                <button type="button"
+                                        wire:click="addRow"
+                                        class="plus-cell"
+                                        title="Add fuel">
+                                    +
+                                </button>
                             @else
                                 -
                             @endif
                         </td>
+
                         <td>-</td>
 
                         <td class="green-number">
-                                {{ number_format((float) $this->totalCurrentStock, 2) }} L
-                            </td>
+                            {{ number_format(
+                                (float) $this->totalCurrentStock,
+                                2
+                            ) }} L
+                        </td>
 
-                            <td>-</td>
+                        <td>
+                            {{ number_format(
+                                (float) $this->fuelStocks->sum(
+                                    fn ($stock) => (float) (
+                                        $stock->total_stock_in ?? 0
+                                    )
+                                ),
+                                2
+                            ) }} L
+                        </td>
 
-                            <td>
-                                <strong>
-                                    ${{ number_format((float) $this->totalStockValue, 2) }}
-                                </strong>
-                            </td>
+                        <td>-</td>
 
-                            <td>-</td>
-                            <td>-</td>
+                        <td>
+                            <strong>
+                                ${{ number_format(
+                                    (float) $this->totalStockValue,
+                                    2
+                                ) }}
+                            </strong>
+                        </td>
+
+                        <td>-</td>
+                        <td>-</td>
                     </tr>
                 </tfoot>
             </table>

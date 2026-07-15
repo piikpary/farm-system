@@ -10,6 +10,8 @@ class FuelStock extends Model
         'name',
         'opening_stock',
         'current_stock',
+        'total_stock_in',
+        'total_stock_out',
         'minimum_stock_alert',
         'status',
         'created_by',
@@ -20,8 +22,10 @@ class FuelStock extends Model
     protected $casts = [
         'opening_stock' => 'decimal:2',
         'current_stock' => 'decimal:2',
+        'total_stock_in' => 'decimal:2',
+        'total_stock_out' => 'decimal:2',
         'minimum_stock_alert' => 'decimal:2',
-        'purchase_price' => 'decimal:2',
+        'purchase_price' => 'decimal:4',
     ];
 
     public function transactions()

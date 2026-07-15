@@ -1926,6 +1926,12 @@ public function updatedEditRow($value, $key)
 <div class="page">
     @include('components.shared-style')
     @include('components.toast-alert')
+    @once
+    <link
+        href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css"
+        rel="stylesheet"
+    >
+@endonce
 
     <style>
     .filter-panel {
@@ -2327,6 +2333,84 @@ public function updatedEditRow($value, $key)
         color: #0f172a !important;
         opacity: 1 !important;
     }
+    .work-plan-select-wrap {
+    width: 420px;
+    min-width: 420px;
+    max-width: 420px;
+}
+
+.work-plan-select-wrap .select2-container {
+    width: 100% !important;
+}
+
+.work-plan-select-wrap .select2-selection--single {
+    height: auto !important;
+    min-height: 42px !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
+}
+
+.work-plan-select-wrap
+.select2-selection--single
+.select2-selection__rendered {
+    min-height: 42px;
+    padding: 8px 34px 8px 10px !important;
+    color: #0f172a !important;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.work-plan-select-wrap
+.select2-selection--single
+.select2-selection__arrow {
+    top: 8px !important;
+    right: 8px !important;
+}
+
+.work-plan-wrap-dropdown {
+    width: 420px !important;
+    max-width: 420px !important;
+}
+
+.work-plan-wrap-dropdown .select2-results__option {
+    padding: 9px 12px !important;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.5;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.saved-work-plan-cell {
+    width: 420px;
+    min-width: 320px;
+    max-width: 420px;
+    white-space: normal !important;
+    vertical-align: top !important;
+}
+
+.saved-work-plan-cell .work-plan-label {
+    display: block !important;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 420px;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.5 !important;
+}
+
+.work-table tbody > tr.saved-work-log-row,
+.work-table tbody > tr.saved-work-log-row > td {
+    height: auto !important;
+    min-height: 52px !important;
+    max-height: none !important;
+}
 </style>
 
     <div class="page-header">
@@ -2616,19 +2700,32 @@ public function updatedEditRow($value, $key)
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
                                 <td>
-                                    <select
-                                        wire:model.live="editRow.farm_work_plan_id"
-                                        wire:change="applyWorkPlanToEdit"
-                                        class="work-plan-select"
+                                    <div
+                                        class="work-plan-select-wrap"
+                                        wire:ignore
+                                        wire:key="edit-work-plan-select-{{ $log->id }}"
                                     >
-                                        <option value="">Select Work Plan</option>
+                                        <select
+                                            id="edit-work-plan-{{ $log->id }}"
+                                            class="js-work-plan-wrap-select"
+                                            data-mode="edit"
+                                            data-model="editRow.farm_work_plan_id"
+                                        >
+                                            <option value="">Select Work Plan</option>
 
-                                        @foreach($workPlans as $plan)
-                                            <option value="{{ $plan->id }}">
-                                                {{ $this->formatWorkPlanSelectLabel($plan) }}
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                            @foreach($workPlans as $plan)
+                                                <option
+                                                    value="{{ $plan->id }}"
+                                                    @selected(
+                                                        (string) ($editRow['farm_work_plan_id'] ?? '') ===
+                                                        (string) $plan->id
+                                                    )
+                                                >
+                                                    {{ $this->formatWorkPlanSelectLabel($plan) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 </td>
 
                                 <td>
@@ -2805,10 +2902,13 @@ public function updatedEditRow($value, $key)
                                 </td>
                             </tr>
                         @else
-                            <tr wire:key="work-log-{{ $log->id }}">
+                            <tr
+                                    class="saved-work-log-row"
+                                    wire:key="work-log-{{ $log->id }}"
+                                >
                                 <td class="row-no">{{ $loop->iteration }}</td>
 
-                                <td>
+                                <td class="saved-work-plan-cell">
                                     @if($log->workPlan)
                                         <span class="work-plan-label">
                                             {{ $savedWorkPlanLabel }}
@@ -2956,20 +3056,34 @@ public function updatedEditRow($value, $key)
                             </td>
 
                             <td>
-                                <select
-                                    wire:model.live="rows.{{ $index }}.farm_work_plan_id"
-                                    wire:change="applyWorkPlanToRow({{ $index }})"
-                                    class="work-plan-select"
-                                >
-                                    <option value="">Select Work Plan</option>
+                                    <div
+                                        class="work-plan-select-wrap"
+                                        wire:ignore
+                                        wire:key="new-work-plan-select-{{ $index }}"
+                                    >
+                                        <select
+                                            id="new-work-plan-{{ $index }}"
+                                            class="js-work-plan-wrap-select"
+                                            data-mode="create"
+                                            data-index="{{ $index }}"
+                                            data-model="rows.{{ $index }}.farm_work_plan_id"
+                                        >
+                                            <option value="">Select Work Plan</option>
 
-                                    @foreach($workPlans as $plan)
-                                        <option value="{{ $plan->id }}">
-                                            {{ $this->formatWorkPlanSelectLabel($plan) }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </td>
+                                            @foreach($workPlans as $plan)
+                                                <option
+                                                    value="{{ $plan->id }}"
+                                                    @selected(
+                                                        (string) ($row['farm_work_plan_id'] ?? '') ===
+                                                        (string) $plan->id
+                                                    )
+                                                >
+                                                    {{ $this->formatWorkPlanSelectLabel($plan) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </td>
 
                             <td>
                                 <input
@@ -3227,18 +3341,70 @@ public function updatedEditRow($value, $key)
         </div>
     </div>
 
+    @once
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+@endonce
     @script
-        <script>
-            $wire.on('work-log-saved', () => {
-                requestAnimationFrame(() => {
-                    const tableWrap =
-                        document.getElementById('workLogTableWrap');
+<script>
+    const initializeWorkPlanWrapSelects = () => {
+        document
+            .querySelectorAll('.js-work-plan-wrap-select')
+            .forEach((element) => {
+                const select = $(element);
 
-                    if (tableWrap) {
-                        tableWrap.scrollLeft = 0;
+                if (select.hasClass('select2-hidden-accessible')) {
+                    return;
+                }
+
+                select.select2({
+                    width: '100%',
+                    dropdownAutoWidth: false,
+                    dropdownCssClass: 'work-plan-wrap-dropdown',
+                    placeholder: 'Select Work Plan'
+                });
+
+                select.on('change.workPlanWrap', async function () {
+                    const model = this.dataset.model;
+                    const mode = this.dataset.mode;
+                    const index = this.dataset.index;
+                    const value = this.value;
+
+                    await $wire.set(model, value);
+
+                    if (mode === 'edit') {
+                        await $wire.call('applyWorkPlanToEdit');
+                        return;
                     }
+
+                    await $wire.call(
+                        'applyWorkPlanToRow',
+                        Number(index)
+                    );
                 });
             });
-        </script>
-    @endscript
+    };
+
+    initializeWorkPlanWrapSelects();
+
+    Livewire.hook('morph.updated', () => {
+        requestAnimationFrame(() => {
+            initializeWorkPlanWrapSelects();
+        });
+    });
+
+    $wire.on('work-log-saved', () => {
+        requestAnimationFrame(() => {
+            const tableWrap =
+                document.getElementById('workLogTableWrap');
+
+            if (tableWrap) {
+                tableWrap.scrollLeft = 0;
+            }
+
+            initializeWorkPlanWrapSelects();
+        });
+    });
+</script>
+@endscript
 </div>
