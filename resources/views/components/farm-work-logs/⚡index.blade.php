@@ -209,15 +209,54 @@ public function updatedEditRow($value, $key)
         return;
     }
 
-    if (in_array($key, ['consume_l_per_hour', 'working_duration'], true)) {
-        $consumePerHour = (float) ($this->editRow['consume_l_per_hour'] ?? 0);
-        $workingDuration = (float) ($this->editRow['working_duration'] ?? 0);
+    $keyParts = explode('.', (string) $key);
+    $field = end($keyParts);
 
-        $this->editRow['total_consume_liter'] = round(
-            $consumePerHour * $workingDuration,
-            2
-        );
+    if (!in_array(
+        $field,
+        ['consume_l_per_hour', 'working_duration'],
+        true
+    )) {
+        return;
     }
+
+    $consumePerHour =
+        (float) ($this->editRow['consume_l_per_hour'] ?? 0);
+
+    $workingDuration =
+        (float) ($this->editRow['working_duration'] ?? 0);
+
+    $this->editRow['total_consume_liter'] = round(
+        $consumePerHour * $workingDuration,
+        2
+    );
+}
+public function recalculateEditFacilityTotal($field, $value)
+{
+    if (!$this->isFacility()) {
+        return;
+    }
+
+    if (!in_array(
+        $field,
+        ['consume_l_per_hour', 'working_duration'],
+        true
+    )) {
+        return;
+    }
+
+    $this->editRow[$field] = $value;
+
+    $consumePerHour =
+        (float) ($this->editRow['consume_l_per_hour'] ?? 0);
+
+    $workingDuration =
+        (float) ($this->editRow['working_duration'] ?? 0);
+
+    $this->editRow['total_consume_liter'] = round(
+        $consumePerHour * $workingDuration,
+        2
+    );
 }
 
     public function syncZoneSelection($index)
@@ -498,9 +537,15 @@ public function updatedEditRow($value, $key)
         }
     }
 
-    public function applyWorkPlanToEdit()
+    public function applyWorkPlanToEdit($selectedPlanId = null)
     {
-        $planId = $this->editRow['farm_work_plan_id'] ?? null;
+        if ($selectedPlanId !== null) {
+            $this->editRow['farm_work_plan_id'] =
+                (string) $selectedPlanId;
+        }
+
+        $planId =
+            $this->editRow['farm_work_plan_id'] ?? null;
 
         $this->editRow['task_category_group_name'] = '';
         $this->editRow['task_category_id'] = '';
@@ -509,8 +554,7 @@ public function updatedEditRow($value, $key)
         $this->editRow['zone_block_select'] = '';
         $this->editRow['machine_id'] = '';
         $this->editRow['location_id'] = '';
-        $this->editRow['consume_l_per_hour'] = '';
-        $this->editRow['total_consume_liter'] = '';
+        
 
         if (!$planId) {
             return;
@@ -549,23 +593,11 @@ public function updatedEditRow($value, $key)
                 (string) $firstTaskCategory->id;
         }
         if ($this->isFacility()) {
-            $consumePerHour =
-                (float) ($plan->request_l_per_hectare ?? 0);
-
-            $workingDuration =
-                (float) ($this->editRow['working_duration'] ?? 0);
-
             $this->editRow['machine_id'] =
                 $plan->machine_id;
 
             $this->editRow['location_id'] =
                 $plan->location_id;
-
-            $this->editRow['consume_l_per_hour'] =
-                $consumePerHour;
-
-            $this->editRow['total_consume_liter'] =
-                round($consumePerHour * $workingDuration, 2);
 
             return;
         }
@@ -1056,6 +1088,19 @@ public function updatedEditRow($value, $key)
         $this->syncEditZoneSelection();
 
         $log = FarmWorkLog::findOrFail($this->editingId);
+
+        if ($this->isFacility()) {
+            $consumePerHour =
+                (float) ($this->editRow['consume_l_per_hour'] ?? 0);
+
+            $workingDuration =
+                (float) ($this->editRow['working_duration'] ?? 0);
+
+            $this->editRow['total_consume_liter'] = round(
+                $consumePerHour * $workingDuration,
+                2
+            );
+        }
 
         $this->validate([
             'editRow.farm_work_plan_id' =>
@@ -2826,7 +2871,7 @@ public function updatedEditRow($value, $key)
                                         <input
                                             type="number"
                                             step="0.01"
-                                            wire:model.live="editRow.consume_l_per_hour"
+                                            wire:model.live.debounce.150ms="editRow.consume_l_per_hour"
                                         >
                                     </td>
 
@@ -2834,21 +2879,25 @@ public function updatedEditRow($value, $key)
                                         <input
                                             type="number"
                                             step="0.01"
-                                            wire:model.live="editRow.working_duration"
+                                            wire:model.live.debounce.150ms="editRow.working_duration"
                                         >
                                     </td>
 
-                                    @php
-                                        $calc = $this->calculateRow($editRow);
-                                    @endphp
-
                                     <td>
                                         <input
-                                                type="number"
-                                                step="0.01"
-                                                class="total-consume-input"
-                                                wire:model.live="editRow.total_consume_liter"
-                                            >
+                                            type="number"
+                                            step="0.01"
+                                            class="total-consume-input"
+                                            value="{{ number_format(
+                                                (float) ($editRow['consume_l_per_hour'] ?? 0)
+                                                * (float) ($editRow['working_duration'] ?? 0),
+                                                2,
+                                                '.',
+                                                ''
+                                            ) }}"
+                                            wire:key="facility-edit-total-{{ $editingId }}-{{ $editRow['consume_l_per_hour'] ?? 0 }}-{{ $editRow['working_duration'] ?? 0 }}"
+                                            readonly
+                                        >
                                     </td>
                                 @else
                                     <td class="zone-combo">
@@ -2901,7 +2950,11 @@ public function updatedEditRow($value, $key)
                                     </td>
 
                                     <td>
-                                        <input type="number" step="0.01" wire:model.live="editRow.working_duration">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            wire:model.live="editRow.working_duration"
+                                        >
                                     </td>
 
                                     <td>
@@ -3413,12 +3466,16 @@ public function updatedEditRow($value, $key)
                     const index = this.dataset.index;
                     const value = this.value;
 
-                    await $wire.set(model, value);
-
                     if (mode === 'edit') {
-                        await $wire.call('applyWorkPlanToEdit');
+                        await $wire.call(
+                            'applyWorkPlanToEdit',
+                            value
+                        );
+
                         return;
                     }
+
+                    await $wire.set(model, value);
 
                     await $wire.call(
                         'applyWorkPlanToRow',
