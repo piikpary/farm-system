@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\TaskCategoryGroup;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use App\Models\TaskCategory;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 class TaskCategoryGroupController extends Controller
 {
@@ -109,18 +112,39 @@ class TaskCategoryGroupController extends Controller
 
     public function destroy(TaskCategoryGroup $taskCategoryGroup)
     {
-        if ($taskCategoryGroup->taskCategories()->exists()) {
-            return back()->with(
-                'error',
-                'This group cannot be deleted because it contains task categories.'
-            );
+        if (!auth()->user()->hasPermission('task_categories.delete')) {
+            abort(403, 'Permission denied.');
         }
 
-        $taskCategoryGroup->delete();
+        try {
+            DB::transaction(function () use ($taskCategoryGroup) {
+                TaskCategory::where(
+                    'task_category_group_id',
+                    $taskCategoryGroup->id
+                )->delete();
 
-        return back()->with(
-            'success',
-            'Task category group deleted successfully.'
-        );
+                $taskCategoryGroup->delete();
+            });
+
+            return redirect()
+                ->route('task-category-groups.index')
+                ->with(
+                    'success',
+                    'Task group deleted successfully.'
+                );
+        } catch (QueryException $e) {
+            $mysqlErrorCode = (int) ($e->errorInfo[1] ?? 0);
+
+            if ($mysqlErrorCode === 1451) {
+                return redirect()
+                    ->route('task-category-groups.index')
+                    ->with(
+                        'error',
+                        'Cannot delete this task group because one or more tasks are already used in a Work Plan or Work Log.'
+                    );
+            }
+
+            throw $e;
+        }
     }
 }

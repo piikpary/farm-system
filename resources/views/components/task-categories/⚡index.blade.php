@@ -6,6 +6,7 @@ use App\Models\TaskCategory;
 use App\Models\TaskCategoryGroup;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
 
 new class extends Component
 {
@@ -211,15 +212,33 @@ new class extends Component
     }
 
     public function delete($id)
-    {
-        if (!auth()->user()->hasPermission('task_categories.delete')) {
-            abort(403, 'Permission denied.');
-        }
+{
+    if (!auth()->user()->hasPermission('task_categories.delete')) {
+        abort(403, 'Permission denied.');
+    }
 
+    try {
         TaskCategory::findOrFail($id)->delete();
 
-        session()->flash('success', 'Task category deleted successfully.');
+        session()->flash(
+            'success',
+            'Task deleted successfully.'
+        );
+    } catch (QueryException $e) {
+        $mysqlErrorCode = (int) ($e->errorInfo[1] ?? 0);
+
+        if ($mysqlErrorCode === 1451) {
+            session()->flash(
+                'error',
+                'Cannot delete this task because it is already used in a Work Plan or Work Log.'
+            );
+
+            return;
+        }
+
+        throw $e;
     }
+}
 
     public function getTaskCategoryGroupsProperty()
     {
