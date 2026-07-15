@@ -548,11 +548,6 @@ public function updatedEditRow($value, $key)
             $this->editRow['task_category_id'] =
                 (string) $firstTaskCategory->id;
         }
-
-        $this->editRow['work_date'] =
-            optional($plan->plan_date)->format('Y-m-d')
-            ?: now()->format('Y-m-d');
-
         if ($this->isFacility()) {
             $this->editRow['machine_id'] = $plan->machine_id;
             $this->editRow['location_id'] = $plan->location_id;
