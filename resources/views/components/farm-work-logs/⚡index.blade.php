@@ -2680,9 +2680,47 @@ public function updatedEditRow($value, $key)
                                 ?? $log->workPlan?->title
                                 ?? '-';
 
-                            $savedWorkPlanLabel = $log->workPlan
-                                ? $this->formatWorkPlanSelectLabel($log->workPlan)
-                                : 'No Plan';
+                            if (!$log->workPlan) {
+                                $savedWorkPlanLabel = 'No Plan';
+                            } elseif ($this->isFacility()) {
+                                $savedWorkPlanLabel =
+                                    $this->formatWorkPlanSelectLabel($log->workPlan);
+                            } else {
+                                $savedTaskCategories = $log->workPlan->activities
+                                    ->map(fn ($activity) => $activity->taskCategory)
+                                    ->filter()
+                                    ->unique('id')
+                                    ->values();
+
+                                if (
+                                    $savedTaskCategories->isEmpty()
+                                    && $log->workPlan->taskCategory
+                                ) {
+                                    $savedTaskCategories = collect([
+                                        $log->workPlan->taskCategory,
+                                    ]);
+                                }
+
+                                $savedTaskGroupNames = $savedTaskCategories
+                                    ->map(fn ($taskCategory) => $taskCategory->group?->name)
+                                    ->filter()
+                                    ->unique()
+                                    ->values()
+                                    ->implode(', ');
+
+                                $savedActivityNames = $savedTaskCategories
+                                    ->pluck('name')
+                                    ->filter()
+                                    ->unique()
+                                    ->values()
+                                    ->implode(', ');
+
+                                $savedWorkPlanLabel = collect([
+                                    $savedTaskGroupNames
+                                        ?: ($log->workPlan->title ?: '-'),
+                                    $savedActivityNames ?: '-',
+                                ])->implode(' | ');
+                            }
                         @endphp
 
                         @if((int) $editingId === (int) $log->id)

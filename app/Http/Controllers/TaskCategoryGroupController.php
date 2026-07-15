@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use App\Models\TaskCategory;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class TaskCategoryGroupController extends Controller
 {
@@ -50,7 +51,13 @@ class TaskCategoryGroupController extends Controller
                 'required',
                 'string',
                 'max:255',
-                'unique:task_category_groups,name',
+                Rule::unique('task_category_groups', 'name')
+                    ->where(function ($query) use ($request) {
+                        $query->where(
+                            'group_type',
+                            $request->group_type
+                        );
+                    }),
             ],
             'description' => [
                 'nullable',
@@ -77,11 +84,13 @@ class TaskCategoryGroupController extends Controller
         );
     }
 
-    public function update(
-        Request $request,
-        TaskCategoryGroup $taskCategoryGroup
-    ) {
-        $validated = $request->validate([
+   public function update(
+    Request $request,
+    TaskCategoryGroup $taskCategoryGroup
+) {
+    $validator = Validator::make(
+        $request->all(),
+        [
             'group_type' => [
                 'required',
                 'in:planning,harvesting,facility',
@@ -91,6 +100,12 @@ class TaskCategoryGroupController extends Controller
                 'string',
                 'max:255',
                 Rule::unique('task_category_groups', 'name')
+                    ->where(function ($query) use ($request) {
+                        $query->where(
+                            'group_type',
+                            $request->group_type
+                        );
+                    })
                     ->ignore($taskCategoryGroup->id),
             ],
             'description' => [
@@ -101,14 +116,42 @@ class TaskCategoryGroupController extends Controller
                 'required',
                 'boolean',
             ],
-        ]);
+        ]
+    );
 
-        $taskCategoryGroup->update($validated);
+    if ($validator->fails()) {
+        return redirect()
+            ->route('task-category-groups.index')
+            ->withErrors($validator)
+            ->withInput();
+    }
+
+    try {
+        $taskCategoryGroup->update(
+            $validator->validated()
+        );
 
         return redirect()
             ->route('task-category-groups.index')
-            ->with('success', 'Task category group updated successfully.');
+            ->with(
+                'success',
+                'Task category group updated successfully.'
+            );
+    } catch (QueryException $e) {
+        $mysqlErrorCode = (int) ($e->errorInfo[1] ?? 0);
+
+        if ($mysqlErrorCode === 1062) {
+            return redirect()
+                ->route('task-category-groups.index')
+                ->with(
+                    'error',
+                    'This task group name already exists for the selected type.'
+                );
+        }
+
+        throw $e;
     }
+}
 
     public function destroy(TaskCategoryGroup $taskCategoryGroup)
     {

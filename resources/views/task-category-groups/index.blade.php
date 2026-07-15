@@ -415,9 +415,9 @@
 
                                         <div class="group-edit-{{ $group->id }} hidden-row">
                                             <button
-                                                type="submit"
+                                                type="button"
                                                 class="mini"
-                                                form="updateGroupForm{{ $group->id }}"
+                                                onclick="document.getElementById('updateGroupForm{{ $group->id }}').submit();"
                                             >
                                                 Save
                                             </button>
