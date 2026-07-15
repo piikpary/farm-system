@@ -549,9 +549,24 @@ public function updatedEditRow($value, $key)
                 (string) $firstTaskCategory->id;
         }
         if ($this->isFacility()) {
-            $this->editRow['machine_id'] = $plan->machine_id;
-            $this->editRow['location_id'] = $plan->location_id;
-            $this->editRow['consume_l_per_hour'] = $plan->request_l_per_hectare;
+            $consumePerHour =
+                (float) ($plan->request_l_per_hectare ?? 0);
+
+            $workingDuration =
+                (float) ($this->editRow['working_duration'] ?? 0);
+
+            $this->editRow['machine_id'] =
+                $plan->machine_id;
+
+            $this->editRow['location_id'] =
+                $plan->location_id;
+
+            $this->editRow['consume_l_per_hour'] =
+                $consumePerHour;
+
+            $this->editRow['total_consume_liter'] =
+                round($consumePerHour * $workingDuration, 2);
+
             return;
         }
 
